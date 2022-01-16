@@ -23,7 +23,10 @@ param LogAnalyticsWorkspaceName string
 @description('Provide the name of the resource group for your excisting Intune Log Analytics Workspace')
 param LogAnalyticsResourceGroup string
 
-@description('Provide any tags required by your organization (optional)')
+@description('Provide the Subscription ID for the Azure Subscription that contains your excisting Intune Log Analytics Workspace')
+param LogAnalyticsSubcriptionID string
+
+@description('Provide any tags required by your organization (optional) use the following format:  location: "West US"')
 param Tags object = {}
 
 // Define variables
@@ -37,7 +40,7 @@ var FunctionAppInsightsName = '${FunctionAppName}-fa-ai'
 // Reference excisting Log Analytics Workspace
 resource LogAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2020-10-01' existing = {
   name: LogAnalyticsWorkspaceName
-  scope: resourceGroup(LogAnalyticsResourceGroup)
+  scope: resourceGroup(LogAnalyticsSubcriptionID,LogAnalyticsResourceGroup)
 }
 
 // Appending variables for secrets 
@@ -152,14 +155,6 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
           name: 'TenantID'
           value: subscription().tenantId
         }
-        {
-          name: 'CustomerID'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
-        }
-        {
-          name: 'SharedKey'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
-        }
       ]
     }
   }
@@ -215,3 +210,21 @@ resource FunctionAppZipDeploy 'Microsoft.Web/sites/extensions@2015-08-01' = {
   }
 }
 
+//Adding key vault references to secrets  
+resource siteconfig 'Microsoft.Web/sites/config@2020-12-01' = {
+  name: FunctionAppName
+  properties: {
+      siteConfig: {
+      appSettings: [
+        {
+          name: 'CustomerID'
+          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
+        }
+        {
+          name: 'SharedKey'
+          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
+        }
+      ]
+    }
+  }
+}

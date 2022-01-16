@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.4.1124.51302",
-      "templateHash": "2167511852807513036"
+      "templateHash": "11452586535773471479"
     }
   },
   "parameters": {
@@ -48,11 +48,17 @@
         "description": "Provide the name of the resource group for your excisting Intune Log Analytics Workspace"
       }
     },
+    "LogAnalyticsSubcriptionID": {
+      "type": "string",
+      "metadata": {
+        "description": "Provide the Subscription ID for the Azure Subscription that contains your excisting Intune Log Analytics Workspace"
+      }
+    },
     "Tags": {
       "type": "object",
       "defaultValue": {},
       "metadata": {
-        "description": "Provide any tags required by your organization (optional)"
+        "description": "Provide any tags required by your organization (optional) use the following format:  location: \"West US\""
       }
     }
   },
@@ -70,7 +76,7 @@
       "apiVersion": "2019-09-01",
       "name": "[format('{0}/{1}', parameters('KeyVaultName'), 'WorkSpaceID')]",
       "properties": {
-        "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('LogAnalyticsResourceGroup')), 'Microsoft.OperationalInsights/workspaces', parameters('LogAnalyticsWorkspaceName')), '2020-10-01').customerId]"
+        "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', parameters('LogAnalyticsSubcriptionID'), parameters('LogAnalyticsResourceGroup')), 'Microsoft.OperationalInsights/workspaces', parameters('LogAnalyticsWorkspaceName')), '2020-10-01').customerId]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyVaultName'))]"
@@ -81,7 +87,7 @@
       "apiVersion": "2019-09-01",
       "name": "[format('{0}/{1}', parameters('KeyVaultName'), 'SharedKey')]",
       "properties": {
-        "value": "[listKeys(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('LogAnalyticsResourceGroup')), 'Microsoft.OperationalInsights/workspaces', parameters('LogAnalyticsWorkspaceName')), '2020-10-01').primarySharedKey]"
+        "value": "[listKeys(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', parameters('LogAnalyticsSubcriptionID'), parameters('LogAnalyticsResourceGroup')), 'Microsoft.OperationalInsights/workspaces', parameters('LogAnalyticsWorkspaceName')), '2020-10-01').primarySharedKey]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.KeyVault/vaults', parameters('KeyVaultName'))]"
@@ -193,14 +199,6 @@
             {
               "name": "TenantID",
               "value": "[subscription().tenantId]"
-            },
-            {
-              "name": "CustomerID",
-              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', parameters('KeyVaultName'))]"
-            },
-            {
-              "name": "SharedKey",
-              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]"
             }
           ]
         }
@@ -253,6 +251,25 @@
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))]"
       ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2020-12-01",
+      "name": "[parameters('FunctionAppName')]",
+      "properties": {
+        "siteConfig": {
+          "appSettings": [
+            {
+              "name": "CustomerID",
+              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', parameters('KeyVaultName'))]"
+            },
+            {
+              "name": "SharedKey",
+              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]"
+            }
+          ]
+        }
+      }
     }
   ]
 }
