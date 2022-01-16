@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.4.1124.51302",
-      "templateHash": "5963404281873101096"
+      "templateHash": "2167511852807513036"
     }
   },
   "parameters": {
@@ -248,7 +248,7 @@
       "apiVersion": "2015-08-01",
       "name": "[format('{0}/{1}', parameters('FunctionAppName'), 'ZipDeploy')]",
       "properties": {
-        "packageUri": "https://github.com/MSEndpointMgr/Reporting/releases/download/1.0/LogAnalyticsAPI.zip"
+        "packageUri": "https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.0/LogAnalyticsAPI.zip"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))]"
