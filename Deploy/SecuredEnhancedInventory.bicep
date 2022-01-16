@@ -26,7 +26,7 @@ param LogAnalyticsResourceGroup string
 @description('Provide the Subscription ID for the Azure Subscription that contains your excisting Intune Log Analytics Workspace')
 param LogAnalyticsSubcriptionID string
 
-@description('Provide any tags required by your organization (optional) use the following format:  location: "West US"')
+@description('Provide any tags required by your organization (optional)')
 param Tags object = {}
 
 // Define variables
