@@ -155,6 +155,14 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
           name: 'TenantID'
           value: subscription().tenantId
         }
+        {
+          name: 'CustomerID'
+          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
+        }
+        {
+          name: 'SharedKey'
+          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
+        }
       ]
     }
   }
@@ -207,24 +215,5 @@ resource FunctionAppZipDeploy 'Microsoft.Web/sites/extensions@2015-08-01' = {
   name: 'ZipDeploy'
   properties: {
       packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.0/LogAnalyticsAPI.zip'
-  }
-}
-
-//Adding key vault references to secrets  
-resource siteconfig 'Microsoft.Web/sites/config@2020-12-01' = {
-  name: FunctionAppName
-  properties: {
-      siteConfig: {
-      appSettings: [
-        {
-          name: 'CustomerID'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
-        }
-        {
-          name: 'SharedKey'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
-        }
-      ]
-    }
   }
 }

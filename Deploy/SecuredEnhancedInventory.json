@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.4.1124.51302",
-      "templateHash": "11452586535773471479"
+      "templateHash": "8288188633065172354"
     }
   },
   "parameters": {
@@ -199,6 +199,14 @@
             {
               "name": "TenantID",
               "value": "[subscription().tenantId]"
+            },
+            {
+              "name": "CustomerID",
+              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', parameters('KeyVaultName'))]"
+            },
+            {
+              "name": "SharedKey",
+              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]"
             }
           ]
         }
@@ -251,25 +259,6 @@
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))]"
       ]
-    },
-    {
-      "type": "Microsoft.Web/sites/config",
-      "apiVersion": "2020-12-01",
-      "name": "[parameters('FunctionAppName')]",
-      "properties": {
-        "siteConfig": {
-          "appSettings": [
-            {
-              "name": "CustomerID",
-              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', parameters('KeyVaultName'))]"
-            },
-            {
-              "name": "SharedKey",
-              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]"
-            }
-          ]
-        }
-      }
     }
   ]
 }
