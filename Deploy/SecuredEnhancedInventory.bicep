@@ -217,3 +217,5 @@ resource FunctionAppZipDeploy 'Microsoft.Web/sites/extensions@2015-08-01' = {
       packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.0/LogAnalyticsAPI.zip'
   }
 }
+output functionAppHostName string = FunctionApp.properties.defaultHostName
+
