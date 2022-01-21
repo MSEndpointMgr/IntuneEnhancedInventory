@@ -106,88 +106,105 @@ Function Send-LogAnalyticsData() {
 }#end function
 #endregion functions
 
-#Deployed 01-14-2022
-
+Write-Information "LogCollectorAPI function received a request."
+#region initialize
 # Setting inital Status Code: 
 $StatusCode = [HttpStatusCode]::OK
 
-# Retrieve authentication token
-$Script:AuthToken = Get-AuthToken
-
-# Assigning and getting variables needed for matching. 
+# Define variables from environment
+$LogControll = $env:LogControl
 # Get secrets from Keyvault
 $CustomerId = $env:WorkspaceID
 $SharedKey  = $env:SharedKey
+
 # Get TenantID from my logged on MSI account for verification 
 $TenantID = $env:TenantID
+
 # Assign inbound parameters to variables for matching
-$InboundDeviceID = $Request.Body.AzureADDeviceID
+$LogName = $Request.Body.LogName
+$InboundDeviceID= $Request.Body.AzureADDeviceID
 $InboundTenantID = $Request.Body.AzureADTenantID
 
-# Query graph for device verification 
-$DeviceURI = "https://graph.microsoft.com/v1.0/devices?`$filter=deviceId eq '$($InboundDeviceID)'"
-$DeviceIDResponse = (Invoke-RestMethod -Method "Get" -Uri $DeviceURI -ContentType "application/json" -Headers $Script:AuthToken -ErrorAction Stop).value
-# Assign to variables for matching 
-$DeviceID = $DeviceIDResponse.deviceId  
-$DeviceEnabled = $DeviceIDResponse.accountEnabled
-
-$AppLogName = $Request.Body.AppLogName
-$DeviceLogName = $Request.Body.DeviceLogName
 #Required empty variable for posting to Log Analytics
 $TimeStampField = ""
+#endregion initialize
 
+#region script
 # Write to the Azure Functions log stream.
-Write-Information "PowerShell HTTP trigger function processed a request."
-Write-Information "Inbound DeviceID $($Request.Body.AzureADDeviceID)"
-Write-Information "Inbound TenantID $($Request.Body.AzureADTenantID)"
-Write-Information "My TenantID $TenantID"
-Write-Information "DeviceID $DeviceID"
-Write-Information "DeviceEnabled: $DeviceEnabled"
-Write-Information "Logtypes received $($AppLogName), $($DeviceLogName)"
+Write-Information "Inbound DeviceID $($InboundDeviceID)"
+Write-Information "Inbound TenantID $($InboundTenantID)"
+Write-Information "Environment TenantID $TenantID"
 
+# Verify request comes from correct tenant
 if($TenantID -eq $InboundTenantID){
     Write-Information "Request is comming from correct tenant"
-    if($DeviceID -eq $InboundDeviceID){
-        Write-Information "request is coming from a valid device in Azure AD"
-        if($DeviceEnabled -eq "True"){
-            Write-Information "requesting device is not disabled in Azure AD"                       
-            #Write-Information "Ingesting $($LogType) to Log Analytics"
-                       
-            # Verify valid logtype before continuing
-            if (-not ([string]::IsNullOrEmpty($AppLogName))){
-                # Prepare logdata from request payload
-                $Json = $Request.Body.AppPayload | ConvertTo-Json
-                $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                # Sending logdata to Log Analytics
-                $AppResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $AppLogName
-                Write-Information "$($AppLogName) Logs sent to LA $($AppResponseLogInventory)"
-                $AppResponse = "App:$AppResponseLogInventory,"
-                $StatusCode = [HttpStatusCode]::OK
-            }
-            if (-not ([string]::IsNullOrEmpty($DeviceLogName))){
-                # Prepare logdata from request payload
-                $Json = $Request.Body.DevicePayload | ConvertTo-Json
-                $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                # Sending logdata to Log Analytics
-                $DeviceResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $DeviceLogName
-                Write-Information "$($DeviceLogName) Logs sent to LA $($DeviceResponseLogInventory)"
-                $DeviceResponse = "Device:$DeviceResponseLogInventory,"
-                $StatusCode = [HttpStatusCode]::OK
-            }
-            $Body = $AppResponse + $DeviceResponse    
+    # Retrieve authentication token
+    $Script:AuthToken = Get-AuthToken
 
-        }else{
-            Write-Warning"Device is not enabled - Forbidden"
+    # Query graph for device verification 
+    $DeviceURI = "https://graph.microsoft.com/v1.0/devices?`$filter=deviceId eq '$($InboundDeviceID)'"
+    $DeviceIDResponse = (Invoke-RestMethod -Method "Get" -Uri $DeviceURI -ContentType "application/json" -Headers $Script:AuthToken -ErrorAction Stop).value
+
+    # Assign to variables for matching 
+    $DeviceID = $DeviceIDResponse.deviceId  
+    $DeviceEnabled = $DeviceIDResponse.accountEnabled    
+    Write-Information "DeviceID $DeviceID"   
+    Write-Information "DeviceEnabled: $DeviceEnabled"
+    # Verify request comes from a valid device
+    if($DeviceID -eq $InboundDeviceID){
+        Write-Information "Request is coming from a valid device in Azure AD"
+        if($DeviceEnabled -eq "True"){
+            Write-Information "Requesting device is not disabled in Azure AD"                       
+            # Check if Log type control is enabled
+            if ($LogControll -eq "true"){
+                #Verify log name applicability
+                Write-Information "Log name control is enabled, verifying log name against allowed values"
+                [Array]$AllowedLogNames = $env:AllowedLogNames
+                Write-Information "Allowed log names is : $($AllowedLogNames)"
+                $LogCheck = $AllowedLogNames -match $LogName
+                if(-not ([string]::IsNullOrEmpty($LogCheck))){
+                    Write-Host "Log $LogName Allowed"
+                    [bool]$LogState = $true
+                }
+                else {
+                    Write-Warning "Logname $LogName not allowed"
+                    [bool]$LogState = $false
+                }       
+            }
+            else{
+                Write-Information "Log control is not enabled, continue"
+                [bool]$LogState = $true
+            }
+            if ($LogState){
+                $Json = $Request.Body.Payload | ConvertTo-Json
+                $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
+                # Sending logdata to Log Analytics
+                $ResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $LogName
+                Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
+                $Response = "$($LogName): $($ResponseLogInventory)"
+                $StatusCode = [HttpStatusCode]::OK
+                $Body = $Response
+            }
+            else {
+                Write-Warning "Log $($LogName) is not allowed"
+                $StatusCode = [HttpStatusCode]::Forbidden        
+            }
+        }
+        else{
+            Write-Warning "Device is not enabled - Forbidden"
             $StatusCode = [HttpStatusCode]::Forbidden
         }
-    }else{
+    }
+    else{
         Write-Warning  "Device not in my Tenant - Forbidden"
         $StatusCode = [HttpStatusCode]::Forbidden
     }
-}else{
+}
+else{
     Write-Warning "Tenant not allowed - Forbidden"
     $StatusCode = [HttpStatusCode]::Forbidden
 }
+#endregion script
 
 # Associate values to output bindings by calling 'Push-OutputBinding'.
 Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
