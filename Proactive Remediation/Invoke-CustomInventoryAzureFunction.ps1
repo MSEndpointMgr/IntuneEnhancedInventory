@@ -36,8 +36,8 @@ $AzureFunctionURL = ""
 # Enable TLS 1.2 support 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 #Control if you want to collect App or Device Inventory or both (True = Collect)
-[Boolean]$CollectAppInventory = $true
-[Boolean]$CollectDeviceInventory = $true
+$CollectAppInventory = $true
+$CollectDeviceInventory = $true
 #Set Log Analytics Log Name
 
 $AppLogName = "AppInventory"
@@ -476,57 +476,58 @@ if ($CompareDate.Days -ge 1){
 	#$ExecuteInSeconds = (Get-Random -Maximum 3000 -Minimum 1)
 	#Start-Sleep -Seconds $ExecuteInSeconds
 }
-
-#Start sending logs
+#Report back status
 $date = Get-Date -Format "dd-MM HH:mm"
 $OutputMessage = "InventoryDate:$date "
+
+$PayLoad = [PSCustomObject]@{
+	AppLogName	    = $AppLogName
+	DeviceLogName   = $DeviceLogName
+	AzureADTenantID = $AzureADTenantID
+	AzureADDeviceID = $AzureADDeviceID
+	AppPayload	    = $AppPayload
+	DevicePayload   = $DevicePayload
+}
+
+$PayloadJSON = $PayLoad | ConvertTo-Json -Depth 9
 
 $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 $headers.Add("Content-Type", "application/json")
 
-if ($CollectAppInventory){
-	$PayLoad = [PSCustomObject]@{
-		LogName	    = $AppLogName
-		AzureADTenantID = $AzureADTenantID
-		AzureADDeviceID = $AzureADDeviceID
-		Payload	    = $AppPayload
-	}
-	$AppPayloadJSON = $PayLoad | ConvertTo-Json -Depth 9	
-	
-	try {
-		$ResponseAppInventory = Invoke-RestMethod $AzureFunctionURL -Method 'POST' -Headers $headers -Body $AppPayloadJSON
-		$OutputMessage = $OutPutMessage + "AppInventory:OK " + $ResponseAppInventory
-	} 
-	catch {
-		$ResponseAppInventory = "Error Code: $($_.Exception.Response.StatusCode.value__)"
-		$AppResponseMessage = $_.Exception.Message
-		$OutputMessage = $OutPutMessage + "AppInventory:Fail " + $ResponseAppInventory + $AppResponseMessage
-	}
+try {
+	$ResponseInventory = Invoke-RestMethod $AzureFunctionURL -Method 'POST' -Headers $headers -Body $PayloadJSON
+} catch {
+	$ResponseInventory = "Error Code: $($_.Exception.Response.StatusCode.value__)"
+    $ResponseMessage = $_.Exception.Message
 }
 
-if ($CollectDeviceInventory){
-	$PayLoad = [PSCustomObject]@{
-		LogName			= $DeviceLogName
-		AzureADTenantID = $AzureADTenantID
-		AzureADDeviceID = $AzureADDeviceID
-		Payload	    	= $DevicePayload
-	}	
-	$DevicePayloadJSON = $PayLoad | ConvertTo-Json -Depth 9	
-	try {
-		$ResponseDeviceInventory = Invoke-RestMethod $AzureFunctionURL -Method 'POST' -Headers $headers -Body $DevicePayloadJSON
-		$OutputMessage = $OutPutMessage + "DeviceInventory:OK " + $ResponseDeviceInventory
-	} 
-	catch {
-		$ResponseDeviceInventory = "Error Code: $($_.Exception.Response.StatusCode.value__)"
-		$DeviceResponseMessage = $_.Exception.Message
-		$OutputMessage = $OutPutMessage + "DeviceInventory:Fail " + $ResponseDeviceInventory + $DeviceResponseMessage
+if ($ResponseInventory-match "200"){
+    $AppResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "App:" }
+    $DeviceResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "Device:" }
+    if ($CollectDeviceInventory) {
+	    if ($DeviceResponse -match "Device:200") {
+		    $OutputMessage = $OutPutMessage + "DeviceInventory:OK " + $DeviceResponse
+	    } else 
+		{
+		    $OutputMessage = $OutPutMessage + "DeviceInventory:Fail " + $DeviceResponse
+	    }
+    }
+    if ($CollectAppInventory) {
+	    if ($AppResponse -match "App:200") {
+		
+		    $OutputMessage = $OutPutMessage + " AppInventory:OK " + $AppResponse
+	    } else {
+		    $OutputMessage = $OutPutMessage + " AppInventory:Fail " + $AppResponse
+	    }
+    }
+	Write-Output $OutputMessage
+	if (($DeviceResponse -notmatch "Device:200") -or ($AppResponse -notmatch "App:200")) {
+		Exit 1
+	} else {
+		Exit 0
 	}
-}
-
-Write-Output $OutputMessage
-if (($ResponseDeviceInventory -notmatch ": 200") -or ($ResponseAppInventory -notmatch ": 200")) {
-	Write-Warning "Exit 1"
 } else {
-	Write-Output "Exit 0"
-}
+	Write-Output "Error: $($ResponseInventory), Message: $($ResponseMessage)"
+	Exit 1
+	}
 #endregion script
