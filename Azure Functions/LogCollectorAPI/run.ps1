@@ -171,7 +171,7 @@ if($TenantID -eq $InboundTenantID){
                 #Verify log name applicability
                 Write-Information "Log name control is enabled, verifying log name against allowed values"
                 [Array]$AllowedLogNames = $env:AllowedLogNames
-                Write-Information "Allowed log names is : $($AllowedLogNames)"
+                Write-Information "Allowed log names: $($AllowedLogNames)"
                 $LogCheck = $AllowedLogNames -match $LogName
                     if(-not ([string]::IsNullOrEmpty($LogCheck))){
                         Write-Host "Log $LogName Allowed"
