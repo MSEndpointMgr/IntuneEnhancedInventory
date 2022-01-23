@@ -163,6 +163,15 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
           name: 'SharedKey'
           value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
         }
+        {
+          name: 'AllowedLogNames'
+          value: '"AppInventory",  "DeviceInventory", "LicenseInventory"'
+        }
+        {
+          name: 'LogControl'
+          value: 'false'
+        }
+
       ]
     }
   }
@@ -214,7 +223,7 @@ resource FunctionAppZipDeploy 'Microsoft.Web/sites/extensions@2015-08-01' = {
   parent: FunctionApp
   name: 'ZipDeploy'
   properties: {
-      packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.0/LogAnalyticsAPI.zip'
+      packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.1/LogCollectorAPIApp1.1.0.zip'
   }
 }
 output functionAppHostName string = FunctionApp.properties.defaultHostName

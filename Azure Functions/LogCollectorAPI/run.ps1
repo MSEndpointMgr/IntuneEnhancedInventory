@@ -1,6 +1,6 @@
 using namespace System.Net
 # Input bindings are passed in via param block.
-param($Request, $TriggerMetadata)
+param($Request)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 #region functions
 function Get-AuthToken {
@@ -42,7 +42,7 @@ function Get-AuthToken {
         return $AuthenticationHeader
     }
 }#end function 
-Function Send-LogAnalyticsData() {
+function Send-LogAnalyticsData() {
     <#
    .SYNOPSIS
        Send log data to Azure Monitor by using the HTTP Data Collector API
@@ -120,10 +120,19 @@ $SharedKey  = $env:SharedKey
 # Get TenantID from my logged on MSI account for verification 
 $TenantID = $env:TenantID
 
-# Assign inbound parameters to variables for matching
-$LogName = $Request.Body.LogName
+# Extracting and processing inbound parameters to variables for matching
+
+$MainPayLoad = $Request.Body.LogPayloads
 $InboundDeviceID= $Request.Body.AzureADDeviceID
 $InboundTenantID = $Request.Body.AzureADTenantID
+
+$LogsReceived = @()
+foreach ($Hash in $MainPayLoad.GetEnumerator()) {
+    Write-Host "$($Hash.Name)"
+    $LogsReceived += "$($Hash.Name)"
+}
+
+Write-Information "Logs Received $($LogsReceived)"
 
 #Required empty variable for posting to Log Analytics
 $TimeStampField = ""
@@ -155,39 +164,44 @@ if($TenantID -eq $InboundTenantID){
         Write-Information "Request is coming from a valid device in Azure AD"
         if($DeviceEnabled -eq "True"){
             Write-Information "Requesting device is not disabled in Azure AD"                       
-            # Check if Log type control is enabled
-            if ($LogControll -eq "true"){
+            foreach ($LogName in $LogsReceived){
+                Write-Information "Processing $($LogName)"
+                # Check if Log type control is enabled
+                if ($LogControll -eq "true"){
                 #Verify log name applicability
                 Write-Information "Log name control is enabled, verifying log name against allowed values"
                 [Array]$AllowedLogNames = $env:AllowedLogNames
                 Write-Information "Allowed log names is : $($AllowedLogNames)"
                 $LogCheck = $AllowedLogNames -match $LogName
-                if(-not ([string]::IsNullOrEmpty($LogCheck))){
-                    Write-Host "Log $LogName Allowed"
+                    if(-not ([string]::IsNullOrEmpty($LogCheck))){
+                        Write-Host "Log $LogName Allowed"
+                        [bool]$LogState = $true
+                    }
+                    else {
+                        Write-Warning "Logname $LogName not allowed"
+                        [bool]$LogState = $false
+                    }       
+                }
+                else{
+                    Write-Information "Log control is not enabled, continue"
                     [bool]$LogState = $true
                 }
+                if ($LogState){
+                    $Json = $MainPayLoad.$LogName | ConvertTo-Json
+                    $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
+                    # Sending logdata to Log Analytics
+                    $ResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $LogName
+                    Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
+                    $Response = "$($LogName): $($ResponseLogInventory)"
+                    $StatusCode = [HttpStatusCode]::OK
+                    $Body += $Response
+                }
                 else {
-                    Write-Warning "Logname $LogName not allowed"
-                    [bool]$LogState = $false
-                }       
-            }
-            else{
-                Write-Information "Log control is not enabled, continue"
-                [bool]$LogState = $true
-            }
-            if ($LogState){
-                $Json = $Request.Body.Payload | ConvertTo-Json
-                $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                # Sending logdata to Log Analytics
-                $ResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $LogName
-                Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
-                $Response = "$($LogName): $($ResponseLogInventory)"
-                $StatusCode = [HttpStatusCode]::OK
-                $Body = $Response
-            }
-            else {
-                Write-Warning "Log $($LogName) is not allowed"
-                $StatusCode = [HttpStatusCode]::Forbidden        
+                    Write-Warning "Log $($LogName) is not allowed"
+                    $StatusCode = [HttpStatusCode]::OK
+                    $Response = "Log $($LogName) is not allowed"
+                    $Body += $Response
+                }
             }
         }
         else{
@@ -211,4 +225,3 @@ Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
     StatusCode = $StatusCode
     Body = $body
 })
-

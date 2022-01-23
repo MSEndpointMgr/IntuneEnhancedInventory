@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.4.1124.51302",
-      "templateHash": "4574770077477918810"
+      "templateHash": "7314507922894400402"
     }
   },
   "parameters": {
@@ -207,6 +207,14 @@
             {
               "name": "SharedKey",
               "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]"
+            },
+            {
+              "name": "AllowedLogNames",
+              "value": "\"AppInventory\",  \"DeviceInventory\", \"LicenseInventory\""
+            },
+            {
+              "name": "LogControl",
+              "value": "false"
             }
           ]
         }
@@ -254,7 +262,7 @@
       "apiVersion": "2015-08-01",
       "name": "[format('{0}/{1}', parameters('FunctionAppName'), 'ZipDeploy')]",
       "properties": {
-        "packageUri": "https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.0/LogAnalyticsAPI.zip"
+        "packageUri": "https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.1/LogCollectorAPIApp1.1.0.zip"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))]"
