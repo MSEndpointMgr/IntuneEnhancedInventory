@@ -126,10 +126,9 @@ $MainPayLoad = $Request.Body.LogPayloads
 $InboundDeviceID= $Request.Body.AzureADDeviceID
 $InboundTenantID = $Request.Body.AzureADTenantID
 
-$LogsReceived = @()
-foreach ($Hash in $MainPayLoad.GetEnumerator()) {
-    Write-Host "$($Hash.Name)"
-    $LogsReceived += "$($Hash.Name)"
+$LogsReceived = New-Object -TypeName System.Collections.ArrayList
+foreach ($Key in $MainPayLoad.Keys) {
+    $LogsReceived.Add($($Key))
 }
 
 Write-Information "Logs Received $($LogsReceived)"
