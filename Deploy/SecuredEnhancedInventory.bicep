@@ -106,7 +106,7 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
       minTlsVersion: '1.2'
       powerShellVersion: '~7'
       scmType: 'None'
-      use32BitWorkerProcess: false
+      use32BitWorkerProcess: true
     }
   }
   tags: Tags

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.4.1124.51302",
-      "templateHash": "2339691796864330853"
+      "templateHash": "4936610952568380832"
     }
   },
   "parameters": {
@@ -151,7 +151,7 @@
           "minTlsVersion": "1.2",
           "powerShellVersion": "~7",
           "scmType": "None",
-          "use32BitWorkerProcess": false
+          "use32BitWorkerProcess": true
         }
       },
       "tags": "[parameters('Tags')]",
