@@ -63,7 +63,7 @@ function Send-LogAnalyticsData() {
        [string]$sharedKey,
        [array]$body, 
        [string]$logType,
-       [string]$customerId
+       [string]$CustomerId
    )
    #Defining method and datatypes
    $method = "POST"
@@ -80,10 +80,10 @@ function Send-LogAnalyticsData() {
    $sha256.Key = $keyBytes
    $calculatedHash = $sha256.ComputeHash($bytesToHash)
    $encodedHash = [Convert]::ToBase64String($calculatedHash)
-   $signature = 'SharedKey {0}:{1}' -f $customerId, $encodedHash
+   $signature = 'SharedKey {0}:{1}' -f $CustomerId, $encodedHash
    
    #Construct uri 
-   $uri = "https://" + $customerId + ".ods.opinsights.azure.com" + $resource + "?api-version=2016-04-01"
+   $uri = "https://" + $CustomerId + ".ods.opinsights.azure.com" + $resource + "?api-version=2016-04-01"
    
    #validate that payload data does not exceed limits
    if ($body.Length -gt (31.9 *1024*1024))
@@ -189,7 +189,7 @@ if($TenantID -eq $InboundTenantID){
                     $Json = $MainPayLoad.$LogName | ConvertTo-Json
                     $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
                     # Sending logdata to Log Analytics
-                    $ResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $LogName
+                    $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
                     Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
                     $Response = "$($LogName): $($ResponseLogInventory)"
                     $StatusCode = [HttpStatusCode]::OK

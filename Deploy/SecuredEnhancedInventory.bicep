@@ -106,73 +106,7 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
       minTlsVersion: '1.2'
       powerShellVersion: '~7'
       scmType: 'None'
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageaccount.name};AccountKey=${storageaccount.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageaccount.name};AccountKey=${storageaccount.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: toLower('LogAnalyticsAPI')
-        }
-        {
-          name: 'WEBSITE_RUN_FROM_PACKAGE'
-          value: '1'
-        }
-        {
-          name: 'AzureWebJobsDisableHomepage'
-          value: 'true'
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~3'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_PROCESS_COUNT'
-          value: '3'
-        }
-        {
-          name: 'PSWorkerInProcConcurrencyUpperBound'
-          value: '10'
-        }
-        {
-          name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
-          value: reference(FunctionAppInsightsComponents.id, '2020-02-02-preview').InstrumentationKey
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: reference(FunctionAppInsightsComponents.id, '2020-02-02-preview').ConnectionString
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'powershell'
-        }
-        {
-          name: 'TenantID'
-          value: subscription().tenantId
-        }
-        {
-          name: 'CustomerID'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
-        }
-        {
-          name: 'SharedKey'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
-        }
-        {
-          name: 'AllowedLogNames'
-          value: '"AppInventory",  "DeviceInventory", "LicenseInventory"'
-        }
-        {
-          name: 'LogControl'
-          value: 'false'
-        }
-
-      ]
+      use32BitWorkerProcess: false
     }
   }
   tags: Tags
@@ -226,5 +160,30 @@ resource FunctionAppZipDeploy 'Microsoft.Web/sites/extensions@2015-08-01' = {
       packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.1/LogCollectorAPIApp1.1.0.zip'
   }
 }
-output functionAppHostName string = FunctionApp.properties.defaultHostName
 
+resource FunctionAppSettings 'Microsoft.Web/sites/config@2020-06-01' = {
+  name: '${FunctionApp.name}/appsettings'
+  properties: {
+    AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storageaccount.name};AccountKey=${storageaccount.listKeys().keys[0].value}'
+    WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: 'DefaultEndpointsProtocol=https;AccountName=${storageaccount.name};AccountKey=${storageaccount.listKeys().keys[0].value}'
+    WEBSITE_CONTENTSHARE: toLower('LogAnalyticsAPI')
+    WEBSITE_RUN_FROM_PACKAGE: 1
+    AzureWebJobsDisableHomepage: 'true'
+    FUNCTIONS_EXTENSION_VERSION: '~3'
+    FUNCTIONS_WORKER_PROCESS_COUNT: '3'
+    FUNCTIONS_WORKER_RUNTIME: 'powershell'
+    PSWorkerInProcConcurrencyUpperBound: '10'
+    APPINSIGHTS_INSTRUMENTATIONKEY: reference(FunctionAppInsightsComponents.id, '2020-02-02-preview').InstrumentationKey
+    APPLICATIONINSIGHTS_CONNECTION_STRING: reference(FunctionAppInsightsComponents.id, '2020-02-02-preview').ConnectionString
+    TenantID: subscription().tenantId
+    WorkspaceID: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
+    SharedKey: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
+    AllowedLogNames: '"AppInventory",  "DeviceInventory", "SampleInventory"'
+    LogControl: 'false'
+  }
+  dependsOn: [
+    FunctionAppZipDeploy
+  ]
+}
+
+output functionAppTriggerUrl string = 'https://${FunctionApp.properties.defaultHostName}/api/LogCollectorAPI'
