@@ -128,7 +128,7 @@ $InboundTenantID = $Request.Body.AzureADTenantID
 
 $LogsReceived = New-Object -TypeName System.Collections.ArrayList
 foreach ($Key in $MainPayLoad.Keys) {
-    $LogsReceived.Add($($Key))
+    $LogsReceived.Add($($Key)) | Out-Null
 }
 
 Write-Information "Logs Received $($LogsReceived)"
