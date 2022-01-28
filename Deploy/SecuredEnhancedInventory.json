@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.4.1124.51302",
-      "templateHash": "4574770077477918810"
+      "templateHash": "14491993589587949676"
     }
   },
   "parameters": {
@@ -151,6 +151,7 @@
           "minTlsVersion": "1.2",
           "powerShellVersion": "~7",
           "scmType": "None",
+          "use32BitWorkerProcess": false,
           "appSettings": [
             {
               "name": "AzureWebJobsStorage",
@@ -195,18 +196,6 @@
             {
               "name": "FUNCTIONS_WORKER_RUNTIME",
               "value": "powershell"
-            },
-            {
-              "name": "TenantID",
-              "value": "[subscription().tenantId]"
-            },
-            {
-              "name": "CustomerID",
-              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', parameters('KeyVaultName'))]"
-            },
-            {
-              "name": "SharedKey",
-              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]"
             }
           ]
         }
@@ -254,17 +243,46 @@
       "apiVersion": "2015-08-01",
       "name": "[format('{0}/{1}', parameters('FunctionAppName'), 'ZipDeploy')]",
       "properties": {
-        "packageUri": "https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.0/LogAnalyticsAPI.zip"
+        "packageUri": "https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.1/LogCollectorAPI.zip"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))]"
       ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2020-06-01",
+      "name": "[format('{0}/appsettings', parameters('FunctionAppName'))]",
+      "properties": {
+        "AzureWebJobsStorage": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1}', variables('StorageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), '2021-02-01').keys[0].value)]",
+        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1}', variables('StorageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), '2021-02-01').keys[0].value)]",
+        "WEBSITE_CONTENTSHARE": "[toLower('LogAnalyticsAPI')]",
+        "WEBSITE_RUN_FROM_PACKAGE": 1,
+        "AzureWebJobsDisableHomepage": "true",
+        "FUNCTIONS_EXTENSION_VERSION": "~3",
+        "FUNCTIONS_WORKER_PROCESS_COUNT": "3",
+        "FUNCTIONS_WORKER_RUNTIME": "powershell",
+        "PSWorkerInProcConcurrencyUpperBound": "10",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02-preview').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02-preview').ConnectionString]",
+        "TenantID": "[subscription().tenantId]",
+        "WorkspaceID": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', parameters('KeyVaultName'))]",
+        "SharedKey": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]",
+        "AllowedLogNames": "\"AppInventory\",  \"DeviceInventory\", \"SampleInventory\"",
+        "LogControl": "false"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))]",
+        "[resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName'))]",
+        "[resourceId('Microsoft.Web/sites/extensions', parameters('FunctionAppName'), 'ZipDeploy')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName'))]"
+      ]
     }
   ],
   "outputs": {
-    "functionAppHostName": {
+    "functionAppTriggerUrl": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))).defaultHostName]"
+      "value": "[format('https://{0}/api/LogCollectorAPI', reference(resourceId('Microsoft.Web/sites', parameters('FunctionAppName'))).defaultHostName)]"
     }
   }
 }

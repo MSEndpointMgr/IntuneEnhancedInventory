@@ -106,6 +106,7 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
       minTlsVersion: '1.2'
       powerShellVersion: '~7'
       scmType: 'None'
+      use32BitWorkerProcess: false
       appSettings: [
         {
           name: 'AzureWebJobsStorage'
@@ -150,18 +151,6 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
         {
           name: 'FUNCTIONS_WORKER_RUNTIME'
           value: 'powershell'
-        }
-        {
-          name: 'TenantID'
-          value: subscription().tenantId
-        }
-        {
-          name: 'CustomerID'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
-        }
-        {
-          name: 'SharedKey'
-          value: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
         }
       ]
     }
@@ -214,8 +203,33 @@ resource FunctionAppZipDeploy 'Microsoft.Web/sites/extensions@2015-08-01' = {
   parent: FunctionApp
   name: 'ZipDeploy'
   properties: {
-      packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.0/LogAnalyticsAPI.zip'
+      packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.1/LogCollectorAPI.zip'
   }
 }
-output functionAppHostName string = FunctionApp.properties.defaultHostName
 
+resource FunctionAppSettings 'Microsoft.Web/sites/config@2020-06-01' = {
+  name: '${FunctionApp.name}/appsettings'
+  properties: {
+    AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storageaccount.name};AccountKey=${storageaccount.listKeys().keys[0].value}'
+    WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: 'DefaultEndpointsProtocol=https;AccountName=${storageaccount.name};AccountKey=${storageaccount.listKeys().keys[0].value}'
+    WEBSITE_CONTENTSHARE: toLower('LogAnalyticsAPI')
+    WEBSITE_RUN_FROM_PACKAGE: 1
+    AzureWebJobsDisableHomepage: 'true'
+    FUNCTIONS_EXTENSION_VERSION: '~3'
+    FUNCTIONS_WORKER_PROCESS_COUNT: '3'
+    FUNCTIONS_WORKER_RUNTIME: 'powershell'
+    PSWorkerInProcConcurrencyUpperBound: '10'
+    APPINSIGHTS_INSTRUMENTATIONKEY: reference(FunctionAppInsightsComponents.id, '2020-02-02-preview').InstrumentationKey
+    APPLICATIONINSIGHTS_CONNECTION_STRING: reference(FunctionAppInsightsComponents.id, '2020-02-02-preview').ConnectionString
+    TenantID: subscription().tenantId
+    WorkspaceID: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=WorkSpaceID)'
+    SharedKey: '@Microsoft.KeyVault(VaultName=${KeyVaultName};SecretName=SharedKey)'
+    AllowedLogNames: '"AppInventory",  "DeviceInventory", "SampleInventory"'
+    LogControl: 'false'
+  }
+  dependsOn: [
+    FunctionAppZipDeploy
+  ]
+}
+
+output functionAppTriggerUrl string = 'https://${FunctionApp.properties.defaultHostName}/api/LogCollectorAPI'

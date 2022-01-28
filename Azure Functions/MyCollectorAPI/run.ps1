@@ -1,6 +1,6 @@
 using namespace System.Net
 # Input bindings are passed in via param block.
-param($Request, $TriggerMetadata)
+param($Request)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 #region functions
 function Get-AuthToken {
@@ -42,7 +42,7 @@ function Get-AuthToken {
         return $AuthenticationHeader
     }
 }#end function 
-Function Send-LogAnalyticsData() {
+function Send-LogAnalyticsData() {
     <#
    .SYNOPSIS
        Send log data to Azure Monitor by using the HTTP Data Collector API
@@ -63,7 +63,7 @@ Function Send-LogAnalyticsData() {
        [string]$sharedKey,
        [array]$body, 
        [string]$logType,
-       [string]$customerId
+       [string]$CustomerId
    )
    #Defining method and datatypes
    $method = "POST"
@@ -80,10 +80,10 @@ Function Send-LogAnalyticsData() {
    $sha256.Key = $keyBytes
    $calculatedHash = $sha256.ComputeHash($bytesToHash)
    $encodedHash = [Convert]::ToBase64String($calculatedHash)
-   $signature = 'SharedKey {0}:{1}' -f $customerId, $encodedHash
+   $signature = 'SharedKey {0}:{1}' -f $CustomerId, $encodedHash
    
    #Construct uri 
-   $uri = "https://" + $customerId + ".ods.opinsights.azure.com" + $resource + "?api-version=2016-04-01"
+   $uri = "https://" + $CustomerId + ".ods.opinsights.azure.com" + $resource + "?api-version=2016-04-01"
    
    #validate that payload data does not exceed limits
    if ($body.Length -gt (31.9 *1024*1024))
@@ -120,19 +120,20 @@ $CustomerId = $env:WorkspaceID
 $SharedKey  = $env:SharedKey
 # Get TenantID from my logged on MSI account for verification 
 $TenantID = $env:TenantID
-# Assign inbound parameters to variables for matching
-$InboundDeviceID = $Request.Body.AzureADDeviceID
+
+# Extracting and processing inbound parameters to variables for matching
+
+$MainPayLoad = $Request.Body.LogPayloads
+$InboundDeviceID= $Request.Body.AzureADDeviceID
 $InboundTenantID = $Request.Body.AzureADTenantID
 
-# Query graph for device verification 
-$DeviceURI = "https://graph.microsoft.com/v1.0/devices?`$filter=deviceId eq '$($InboundDeviceID)'"
-$DeviceIDResponse = (Invoke-RestMethod -Method "Get" -Uri $DeviceURI -ContentType "application/json" -Headers $Script:AuthToken -ErrorAction Stop).value
-# Assign to variables for matching 
-$DeviceID = $DeviceIDResponse.deviceId  
-$DeviceEnabled = $DeviceIDResponse.accountEnabled
+$LogsReceived = New-Object -TypeName System.Collections.ArrayList
+foreach ($Key in $MainPayLoad.Keys) {
+    $LogsReceived.Add($($Key)) | Out-Null
+}
 
-$AppLogName = $Request.Body.AppLogName
-$DeviceLogName = $Request.Body.DeviceLogName
+Write-Information "Logs Received $($LogsReceived)"
+
 #Required empty variable for posting to Log Analytics
 $TimeStampField = ""
 
@@ -150,29 +151,45 @@ if($TenantID -eq $InboundTenantID){
     if($DeviceID -eq $InboundDeviceID){
         Write-Information "request is coming from a valid device in Azure AD"
         if($DeviceEnabled -eq "True"){
-            Write-Information "requesting device is not disabled in Azure AD"                       
-            #Write-Information "Ingesting $($LogType) to Log Analytics"
-                       
-            # Verify valid logtype before continuing
-            if (-not ([string]::IsNullOrEmpty($AppLogName))){
-                # Prepare logdata from request payload
-                $Json = $Request.Body.AppPayload | ConvertTo-Json
-                $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                # Sending logdata to Log Analytics
-                $AppResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $AppLogName
-                Write-Information "$($AppLogName) Logs sent to LA $($AppResponseLogInventory)"
-                $AppResponse = "App:$AppResponseLogInventory,"
-                $StatusCode = [HttpStatusCode]::OK
-            }
-            if (-not ([string]::IsNullOrEmpty($DeviceLogName))){
-                # Prepare logdata from request payload
-                $Json = $Request.Body.DevicePayload | ConvertTo-Json
-                $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                # Sending logdata to Log Analytics
-                $DeviceResponseLogInventory = Send-LogAnalyticsData -customerId $customerId -sharedKey $sharedKey -body $LogBody -logType $DeviceLogName
-                Write-Information "$($DeviceLogName) Logs sent to LA $($DeviceResponseLogInventory)"
-                $DeviceResponse = "Device:$DeviceResponseLogInventory,"
-                $StatusCode = [HttpStatusCode]::OK
+            Write-Information "Requesting device is not disabled in Azure AD"                       
+            foreach ($LogName in $LogsReceived){
+                Write-Information "Processing $($LogName)"
+                # Check if Log type control is enabled
+                if ($LogControll -eq "true"){
+                #Verify log name applicability
+                Write-Information "Log name control is enabled, verifying log name against allowed values"
+                [Array]$AllowedLogNames = $env:AllowedLogNames
+                Write-Information "Allowed log names: $($AllowedLogNames)"
+                $LogCheck = $AllowedLogNames -match $LogName
+                    if(-not ([string]::IsNullOrEmpty($LogCheck))){
+                        Write-Host "Log $LogName Allowed"
+                        [bool]$LogState = $true
+                    }
+                    else {
+                        Write-Warning "Logname $LogName not allowed"
+                        [bool]$LogState = $false
+                    }       
+                }
+                else{
+                    Write-Information "Log control is not enabled, continue"
+                    [bool]$LogState = $true
+                }
+                if ($LogState){
+                    $Json = $MainPayLoad.$LogName | ConvertTo-Json
+                    $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
+                    # Sending logdata to Log Analytics
+                    $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
+                    Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
+                    $Response = "$($LogName): $($ResponseLogInventory)"
+                    $StatusCode = [HttpStatusCode]::OK
+                    $Body += $Response
+                }
+                else {
+                    Write-Warning "Log $($LogName) is not allowed"
+                    $StatusCode = [HttpStatusCode]::OK
+                    $Response = "Log $($LogName) is not allowed"
+                    $Body += $Response
+                }
             }
             $Body = $AppResponse + $DeviceResponse    
 
@@ -194,4 +211,3 @@ Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
     StatusCode = $StatusCode
     Body = $body
 })
-

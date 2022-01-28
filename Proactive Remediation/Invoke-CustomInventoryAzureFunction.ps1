@@ -15,7 +15,7 @@ Author:      Jan Ketil Skanke
 Contributor: Sandy Zeng / Maurice Daly
 Contact:     @JankeSkanke
 Created:     2021-01-02
-Updated:     2021-21-10
+Updated:     2022-22-02
 
 Version history:
 0.9.0 - (2021 - 01 - 02) Script created
@@ -25,6 +25,7 @@ Version history:
 2.0.1 (2021-09-01) Removed all location information for privacy reasons 
 2.1 - (2021-09-08) Added section to cater for BIOS release version information, for HP, Dell and Lenovo and general bugfixes
 2.1.1 - (2021-21-10) Added MACAddress to the inventory for each NIC. 
+3.0.0 - (2022-22-02) Azure Function updated - Requires version 1.1 of Azure Function LogCollectorAPI for more dynamic log collecting
 #>
 
 #region initialize
@@ -421,7 +422,7 @@ if ($CollectDeviceInventory) {
 	$Inventory | Add-Member -MemberType NoteProperty -Name "DiskHealth" -Value $DiskHealthArrayList -Force
 	
 	
-	$DevicePayLoad = $Inventory
+	$DeviceInventory = $Inventory
 	
 }
 #endregion DEVICEINVENTORY
@@ -463,7 +464,7 @@ if ($CollectAppInventory) {
 		$AppArray += $tempapp
 	}
 	
-	$AppPayLoad = $AppArray
+	$AppInventory = $AppArray
 }
 #endregion APPINVENTORY
 
@@ -476,7 +477,7 @@ if ($CompareDate.Days -ge 1){
 	#$ExecuteInSeconds = (Get-Random -Maximum 3000 -Minimum 1)
 	#Start-Sleep -Seconds $ExecuteInSeconds
 }
-#Report back status
+#Start sending logs
 $date = Get-Date -Format "dd-MM HH:mm"
 $OutputMessage = "InventoryDate:$date "
 
@@ -494,13 +495,35 @@ $PayloadJSON = $PayLoad | ConvertTo-Json -Depth 9
 $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 $headers.Add("Content-Type", "application/json")
 
-try {
-	$ResponseInventory = Invoke-RestMethod $AzureFunctionURL -Method 'POST' -Headers $headers -Body $PayloadJSON
-} catch {
-	$ResponseInventory = "Error Code: $($_.Exception.Response.StatusCode.value__)"
-    $ResponseMessage = $_.Exception.Message
+$LogPayLoad = New-Object -TypeName PSObject 
+if ($CollectAppInventory) {
+	$LogPayLoad | Add-Member -NotePropertyMembers @{$AppLogName = $AppInventory}
+}
+if ($CollectDeviceInventory) {
+	$LogPayLoad | Add-Member -NotePropertyMembers @{$DeviceLogName = $DeviceInventory}
+}																																																																		
+
+# Construct main payload to send to LogCollectorAPI
+$MainPayLoad = [PSCustomObject]@{
+	AzureADTenantID = $AzureADTenantID
+	AzureADDeviceID = $AzureADDeviceID
+	LogPayloads = $LogPayLoad
 }
 
+$MainPayLoadJson = $MainPayLoad| ConvertTo-Json -Depth 9	
+
+# Sending data to API
+try {
+	$ResponseInventory = Invoke-RestMethod $AzureFunctionURL -Method 'POST' -Headers $headers -Body $MainPayLoadJson
+	$OutputMessage = $OutPutMessage + "Inventory:OK " + $ResponseInventory
+} 
+catch {
+	$ResponseInventory = "Error Code: $($_.Exception.Response.StatusCode.value__)"
+	$ResponseMessage = $_.Exception.Message
+	$OutputMessage = $OutPutMessage + "Inventory:Fail " + $ResponseInventory + $ResponseMessage
+}
+
+# Check status and report to Proactive Remediations
 if ($ResponseInventory-match "200"){
     $AppResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "App:" }
     $DeviceResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "Device:" }
