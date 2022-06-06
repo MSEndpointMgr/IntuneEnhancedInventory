@@ -15,7 +15,7 @@ Author:      Jan Ketil Skanke
 Contributor: Sandy Zeng / Maurice Daly
 Contact:     @JankeSkanke
 Created:     2021-01-02
-Updated:     2022-22-02
+Updated:     2022-06-06
 
 Version history:
 0.9.0 - (2021 - 01 - 02) Script created
@@ -26,6 +26,7 @@ Version history:
 2.1 - (2021-09-08) Added section to cater for BIOS release version information, for HP, Dell and Lenovo and general bugfixes
 2.1.1 - (2021-21-10) Added MACAddress to the inventory for each NIC. 
 3.0.0 - (2022-22-02) Azure Function updated - Requires version 1.1 of Azure Function LogCollectorAPI for more dynamic log collecting
+3.0.1 - (2022-06-06) Minor changes to reported in 'Check status and report' section
 #>
 
 #region initialize
@@ -525,26 +526,26 @@ catch {
 
 # Check status and report to Proactive Remediations
 if ($ResponseInventory-match "200"){
-    $AppResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "App:" }
-    $DeviceResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "Device:" }
+    $AppResponse = $ResponseInventory.Split('Kb') | Where-Object { $_ -match "AppInventory:" }
+    $DeviceResponse = $ResponseInventory.Split('Kb') | Where-Object { $_ -match "DeviceInventory:" }
     if ($CollectDeviceInventory) {
-	    if ($DeviceResponse -match "Device:200") {
-		    $OutputMessage = $OutPutMessage + "DeviceInventory:OK " + $DeviceResponse
+	    if ($DeviceResponse -match "DeviceInventory: 200") {
+		    $OutputMessage = $OutPutMessage  + "`n" + "DeviceInventory:OK " + $DeviceResponse
 	    } else 
 		{
-		    $OutputMessage = $OutPutMessage + "DeviceInventory:Fail " + $DeviceResponse
+		    $OutputMessage = $OutPutMessage  + "`n" + "DeviceInventory:Fail " + $DeviceResponse
 	    }
     }
     if ($CollectAppInventory) {
-	    if ($AppResponse -match "App:200") {
+	    if ($AppResponse -match "AppInventory: 200") {
 		
-		    $OutputMessage = $OutPutMessage + " AppInventory:OK " + $AppResponse
+		    $OutputMessage = $OutPutMessage + "`n" + "AppInventory:OK " + $AppResponse
 	    } else {
-		    $OutputMessage = $OutPutMessage + " AppInventory:Fail " + $AppResponse
+		    $OutputMessage = $OutPutMessage + "`n" + "AppInventory:Fail " + $AppResponse
 	    }
     }
 	Write-Output $OutputMessage
-	if (($DeviceResponse -notmatch "Device:200") -or ($AppResponse -notmatch "App:200")) {
+	if (($DeviceResponse -notmatch "DeviceInventory: 200") -or ($AppResponse -notmatch "AppInventory: 200")) {
 		Exit 1
 	} else {
 		Exit 0
