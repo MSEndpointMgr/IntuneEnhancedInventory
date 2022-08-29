@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.4.1124.51302",
-      "templateHash": "15788904876108500037"
+      "version": "0.9.1.41621",
+      "templateHash": "15185886858314119903"
     }
   },
   "parameters": {
@@ -117,6 +117,7 @@
       "name": "[variables('FunctionAppServicePlanName')]",
       "location": "[resourceGroup().location]",
       "kind": "Windows",
+      "properties": {},
       "sku": {
         "name": "[parameters('FunctionAppServicePlanSKU')]"
       },
@@ -124,7 +125,7 @@
     },
     {
       "type": "Microsoft.Insights/components",
-      "apiVersion": "2020-02-02-preview",
+      "apiVersion": "2020-02-02",
       "name": "[variables('FunctionAppInsightsName')]",
       "location": "[resourceGroup().location]",
       "kind": "web",
@@ -187,11 +188,11 @@
             },
             {
               "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02-preview').InstrumentationKey]"
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02').InstrumentationKey]"
             },
             {
               "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
-              "value": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02-preview').ConnectionString]"
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02').ConnectionString]"
             },
             {
               "name": "FUNCTIONS_WORKER_RUNTIME",
@@ -263,8 +264,8 @@
         "FUNCTIONS_WORKER_PROCESS_COUNT": "3",
         "FUNCTIONS_WORKER_RUNTIME": "powershell",
         "PSWorkerInProcConcurrencyUpperBound": "10",
-        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02-preview').InstrumentationKey]",
-        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02-preview').ConnectionString]",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02').ConnectionString]",
         "TenantID": "[subscription().tenantId]",
         "WorkspaceID": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', parameters('KeyVaultName'))]",
         "SharedKey": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', parameters('KeyVaultName'))]",
