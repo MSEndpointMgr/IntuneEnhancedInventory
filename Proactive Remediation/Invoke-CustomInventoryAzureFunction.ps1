@@ -26,6 +26,7 @@ Version history:
 2.1 - (2021-09-08) Added section to cater for BIOS release version information, for HP, Dell and Lenovo and general bugfixes
 2.1.1 - (2021-21-10) Added MACAddress to the inventory for each NIC. 
 3.0.0 - (2022-22-02) Azure Function updated - Requires version 1.1 of Azure Function LogCollectorAPI for more dynamic log collecting
+3.0.1 - (2022-15.09) Updated to support CloudPC (Different method to find AzureAD DeviceID for verification) and fixed output error from script (Thanks to @gwblok)
 #>
 
 #region initialize
@@ -64,16 +65,26 @@ function Get-AzureADDeviceID {
     
         Version history:
         1.0.0 - (2021-05-26) Function created
+		1.0.1 - (2022-15.09) Updated to support CloudPC (Different method to find AzureAD DeviceID)
     #>
 	Process {
 		# Define Cloud Domain Join information registry path
 		$AzureADJoinInfoRegistryKeyPath = "HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo"
 		
 		# Retrieve the child key name that is the thumbprint of the machine certificate containing the device identifier guid
-		$AzureADJoinInfoThumbprint = Get-ChildItem -Path $AzureADJoinInfoRegistryKeyPath | Select-Object -ExpandProperty "PSChildName"
-		if ($AzureADJoinInfoThumbprint -ne $null) {
+		$AzureADJoinInfoKey = Get-ChildItem -Path $AzureADJoinInfoRegistryKeyPath | Select-Object -ExpandProperty "PSChildName"
+		if ($AzureADJoinInfoKey -ne $null) {
 			# Retrieve the machine certificate based on thumbprint from registry key
-			$AzureADJoinCertificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Thumbprint -eq $AzureADJoinInfoThumbprint }
+            
+            if ($AzureADJoinInfoKey -ne $null) {
+                # Match key data against GUID regex
+                if ([guid]::TryParse($AzureADJoinInfoKey, $([ref][guid]::Empty))) {
+                    $AzureADJoinCertificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Subject -like "CN=$($AzureADJoinInfoKey)" }
+                }
+                else {
+                    $AzureADJoinCertificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Thumbprint -eq $AzureADJoinInfoKey }    
+                }
+            }
 			if ($AzureADJoinCertificate -ne $null) {
 				# Determine the device identifier from the subject name
 				$AzureADDeviceID = ($AzureADJoinCertificate | Select-Object -ExpandProperty "Subject") -replace "CN=", ""
@@ -86,30 +97,40 @@ function Get-AzureADDeviceID {
 function Get-AzureADJoinDate {
     <#
     .SYNOPSIS
-        Get the Azure AD device ID from the local device.
+        Get the Azure AD Join Date from the local device.
     
     .DESCRIPTION
-        Get the Azure AD device ID from the local device.
+        Get the Azure AD Join Date from the local device.
     
     .NOTES
-        Author:      Nickolaj Andersen
-        Contact:     @NickolajA
+        Author:      Jan Ketil Skanke (and Nickolaj Andersen)
+        Contact:     @JankeSkanke
         Created:     2021-05-26
         Updated:     2021-05-26
     
         Version history:
         1.0.0 - (2021-05-26) Function created
+		1.0.1 - (2022-15.09) Updated to support CloudPC (Different method to find AzureAD DeviceID)
     #>
 	Process {
 		# Define Cloud Domain Join information registry path
 		$AzureADJoinInfoRegistryKeyPath = "HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo"
 		
 		# Retrieve the child key name that is the thumbprint of the machine certificate containing the device identifier guid
-		$AzureADJoinInfoThumbprint = Get-ChildItem -Path $AzureADJoinInfoRegistryKeyPath | Select-Object -ExpandProperty "PSChildName"
-		if ($AzureADJoinInfoThumbprint -ne $null) {
+		$AzureADJoinInfoKey = Get-ChildItem -Path $AzureADJoinInfoRegistryKeyPath | Select-Object -ExpandProperty "PSChildName"
+		if ($AzureADJoinInfoKey -ne $null) {
 			# Retrieve the machine certificate based on thumbprint from registry key
-			$AzureADJoinCertificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Thumbprint -eq $AzureADJoinInfoThumbprint }
-			if ($AzureADJoinCertificate -ne $null) {
+            
+            if ($AzureADJoinInfoKey -ne $null) {
+                # Match key data against GUID regex
+                if ([guid]::TryParse($AzureADJoinInfoKey, $([ref][guid]::Empty))) {
+                    $AzureADJoinCertificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Subject -like "CN=$($AzureADJoinInfoKey)" }
+                }
+                else {
+                    $AzureADJoinCertificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Thumbprint -eq $AzureADJoinInfoKey }    
+                }
+            }
+		if ($AzureADJoinCertificate -ne $null) {
 				# Determine the device identifier from the subject name
 				$AzureADJoinDate = ($AzureADJoinCertificate | Select-Object -ExpandProperty "NotBefore") 
 				# Handle return value
@@ -481,17 +502,6 @@ if ($CompareDate.Days -ge 1){
 $date = Get-Date -Format "dd-MM HH:mm"
 $OutputMessage = "InventoryDate:$date "
 
-$PayLoad = [PSCustomObject]@{
-	AppLogName	    = $AppLogName
-	DeviceLogName   = $DeviceLogName
-	AzureADTenantID = $AzureADTenantID
-	AzureADDeviceID = $AzureADDeviceID
-	AppPayload	    = $AppPayload
-	DevicePayload   = $DevicePayload
-}
-
-$PayloadJSON = $PayLoad | ConvertTo-Json -Depth 9
-
 $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 $headers.Add("Content-Type", "application/json")
 
@@ -524,33 +534,36 @@ catch {
 }
 
 # Check status and report to Proactive Remediations
-if ($ResponseInventory-match "200"){
-    $AppResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "App:" }
-    $DeviceResponse = $ResponseInventory.Split(",") | Where-Object { $_ -match "Device:" }
+if ($ResponseInventory -match "200"){
+    $AppResponse = $ResponseInventory.Split('Kb') | Where-Object { $_ -match "AppInventory:" }
+    $DeviceResponse = $ResponseInventory.Split('Kb') | Where-Object { $_ -match "DeviceInventory:" }
     if ($CollectDeviceInventory) {
-	    if ($DeviceResponse -match "Device:200") {
-		    $OutputMessage = $OutPutMessage + "DeviceInventory:OK " + $DeviceResponse
+	    if ($DeviceResponse -match "DeviceInventory: 200") {
+		    $OutputMessage = $OutPutMessage  + "`n" + "DeviceInventory:OK " + $DeviceResponse
 	    } else 
 		{
-		    $OutputMessage = $OutPutMessage + "DeviceInventory:Fail " + $DeviceResponse
+		    $OutputMessage = $OutPutMessage  + "`n" + "DeviceInventory:Fail " + $DeviceResponse
 	    }
     }
     if ($CollectAppInventory) {
-	    if ($AppResponse -match "App:200") {
-		
-		    $OutputMessage = $OutPutMessage + " AppInventory:OK " + $AppResponse
+	    if ($AppResponse -match "AppInventory: 200") {
+
+		    $OutputMessage = $OutPutMessage + "`n" + "AppInventory:OK " + $AppResponse
 	    } else {
-		    $OutputMessage = $OutPutMessage + " AppInventory:Fail " + $AppResponse
+		    $OutputMessage = $OutPutMessage + "`n" + "AppInventory:Fail " + $AppResponse
 	    }
     }
 	Write-Output $OutputMessage
-	if (($DeviceResponse -notmatch "Device:200") -or ($AppResponse -notmatch "App:200")) {
+	if (($DeviceResponse -notmatch "DeviceInventory: 200") -or ($AppResponse -notmatch "AppInventory: 200")) {
 		Exit 1
-	} else {
+	} 
+    else {
 		Exit 0
 	}
-} else {
-	Write-Output "Error: $($ResponseInventory), Message: $($ResponseMessage)"
+} 
+else {
+    Write-Output "Error: $($ResponseInventory), Message: $($ResponseMessage)"
 	Exit 1
-	}
+}
 #endregion script
+
