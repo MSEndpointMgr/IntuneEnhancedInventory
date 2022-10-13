@@ -101,7 +101,7 @@ function Send-LogAnalyticsData() {
    }
    #Sending data to log analytics 
    $response = Invoke-WebRequest -Uri $uri -Method $method -ContentType $contentType -Headers $headers -Body $body -UseBasicParsing
-   $statusmessage = "$($response.StatusCode) : $($payloadsize)"
+   $statusmessage = "$($response.StatusCode):$($payloadsize)"
    return $statusmessage 
 }#end function
 #endregion functions
@@ -143,6 +143,7 @@ Write-Information "Inbound DeviceID $($InboundDeviceID)"
 Write-Information "Inbound TenantID $($InboundTenantID)"
 Write-Information "Environment TenantID $TenantID"
 
+$ResponseArray = New-Object -TypeName System.Collections.ArrayList
 # Verify request comes from correct tenant
 if($TenantID -eq $InboundTenantID){
     Write-Information "Request is comming from correct tenant"
@@ -191,15 +192,25 @@ if($TenantID -eq $InboundTenantID){
                     # Sending logdata to Log Analytics
                     $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
                     Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
-                    $Response = "$($LogName): $($ResponseLogInventory)"
+                    $PSObject = [PSCustomObject]@{
+                        LogName = $LogName
+                        Response = $ResponseLogInventory
+                    }
+                    $ResponseArray.Add($PSObject) | Out-Null
+                    #$Response = "$($LogName): $($ResponseLogInventory)"
                     $StatusCode = [HttpStatusCode]::OK
-                    $Body += $Response
+                    #$Body += $Response
                 }
                 else {
                     Write-Warning "Log $($LogName) is not allowed"
                     $StatusCode = [HttpStatusCode]::OK
-                    $Response = "Log $($LogName) is not allowed"
-                    $Body += $Response
+                    $PSObject = [PSCustomObject]@{
+                        LogName = $LogName
+                        Response = "Logtype is not allowed"
+                    }
+                    $ResponseArray.Add($PSObject) | Out-Null                   
+                    #$Response = "Log $($LogName) is not allowed"
+                    #$Body += $Response
                 }
             }
         }
@@ -218,7 +229,7 @@ else{
     $StatusCode = [HttpStatusCode]::Forbidden
 }
 #endregion script
-
+$body = $ResponseArray | ConvertTo-Json 
 # Associate values to output bindings by calling 'Push-OutputBinding'.
 Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
     StatusCode = $StatusCode
