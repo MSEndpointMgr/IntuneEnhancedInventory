@@ -86,8 +86,7 @@ function Send-LogAnalyticsData() {
    $uri = "https://" + $CustomerId + ".ods.opinsights.azure.com" + $resource + "?api-version=2016-04-01"
    
    #validate that payload data does not exceed limits
-   if ($body.Length -gt (31.9 *1024*1024))
-   {
+   if ($body.Length -gt (31.9 *1024*1024)){
        throw("Upload payload is too big and exceed the 32Mb limit for a single upload. Please reduce the payload size. Current payload size is: " + ($body.Length/1024/1024).ToString("#.#") + "Mb")
    }
    $payloadsize = ("Upload payload size is " + ($body.Length/1024).ToString("#.#") + "Kb ")
@@ -99,7 +98,7 @@ function Send-LogAnalyticsData() {
        "x-ms-date"            = $date;
        "time-generated-field" = $TimeStampField;
    }
-   #Sending data to log analytics 
+   #Sending data to log analytics
    $response = Invoke-WebRequest -Uri $uri -Method $method -ContentType $contentType -Headers $headers -Body $body -UseBasicParsing
    $statusmessage = "$($response.StatusCode):$($payloadsize)"
    return $statusmessage 
@@ -188,18 +187,29 @@ if($TenantID -eq $InboundTenantID){
                 }
                 if ($LogState){
                     $Json = $MainPayLoad.$LogName | ConvertTo-Json
-                    $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                    # Sending logdata to Log Analytics
-                    $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
-                    Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
-                    $PSObject = [PSCustomObject]@{
-                        LogName = $LogName
-                        Response = $ResponseLogInventory
+                    $LogSize = $json.Length
+                    if ($LogSize -gt 0){
+                        Write-Information "Log $($logname) has content. Size is $($json.Length)"
+                        $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
+                        # Sending logdata to Log Analytics
+                        $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
+                        Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
+                        $PSObject = [PSCustomObject]@{
+                            LogName = $LogName
+                            Response = $ResponseLogInventory
+                        }
+                        $ResponseArray.Add($PSObject) | Out-Null
+                        $StatusCode = [HttpStatusCode]::OK
                     }
-                    $ResponseArray.Add($PSObject) | Out-Null
-                    #$Response = "$($LogName): $($ResponseLogInventory)"
-                    $StatusCode = [HttpStatusCode]::OK
-                    #$Body += $Response
+                    else {
+                        # Log is empty - return status 200 but with info about empty log
+                        Write-Information "Log $($logname) has no content. Size is $($json.Length)"
+                        $PSObject = [PSCustomObject]@{
+                            LogName = $LogName
+                            Response = "200:Log does not contain data"
+                        }
+                        $ResponseArray.Add($PSObject) | Out-Null
+                    }
                 }
                 else {
                     Write-Warning "Log $($LogName) is not allowed"

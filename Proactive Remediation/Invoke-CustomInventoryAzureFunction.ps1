@@ -532,7 +532,8 @@ if ($CollectAppInventory) {
 }
 if ($CollectDeviceInventory) {
 	$LogPayLoad | Add-Member -NotePropertyMembers @{$DeviceLogName = $DeviceInventory}
-}																																																																		
+}
+
 
 
 # Construct main payload to send to LogCollectorAPI
@@ -543,7 +544,8 @@ $MainPayLoad = [PSCustomObject]@{
 }
 $MainPayLoadJson = $MainPayLoad| ConvertTo-Json -Depth 9	
 
-# Set default exit code to 0
+# New in version 3.5.0 - Now it requires functionapp version 1.2 
+# Set default exit code to 0 
 $ExitCode = 0
 
 # Attempt to send data to API
@@ -565,16 +567,10 @@ catch {
     $OutputMessage = $OutPutMessage + "Inventory:FAIL " + $ResponseInventory + $ResponseMessage
     $ExitCode = 1
 }
+# Exit script with correct output and code
 
-# Verify ExitCode and exit script with correct output 
-if ($ExitCode -ne 1){
-    Write-Output $OutputMessage
-    Exit $ExitCode
-}
-else {
-    Write-Output $OutputMessage
-    Exit $ExitCode
-}
+Write-Output $OutputMessage
+Exit $ExitCode																							
 
 #endregion script
 
