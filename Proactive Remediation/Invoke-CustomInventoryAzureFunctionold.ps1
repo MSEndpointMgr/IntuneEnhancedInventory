@@ -4,15 +4,10 @@ Collect custom device inventory and upload to Log Analytics for further processi
 
 .DESCRIPTION
 This script will collect device hardware and / or app inventory and upload this to a Log Analytics Workspace. This allows you to easily search in device hardware and installed apps inventory.
-The script is meant to be runned on a daily schedule either via Proactive Remediations (RECOMMENDED) in Intune or manually added as local schedule task on your Windows Computer.
+The script is meant to be runned on a daily schedule either via Proactive Remediations (RECOMMENDED) in Intune or manually added as local schedule task on your Windows 10 Computer.
 
 .EXAMPLE
 Invoke-CustomInventoryWithAzureFunction.ps1 (Required to run as System or Administrator)
-
-.PARAMETER 
-Note the following variables 
-$RandomiseCollectionInt - if this is true the randomizer to spread load over X minutes is enabled 
-$RandomizeMinutes - the number of minutes to randomize load over. Max 50 minutes to avoid PR timeouts 
 
 .NOTES
 FileName:    Invoke-CustomInventory.ps1
@@ -20,7 +15,7 @@ Author:      Jan Ketil Skanke
 Contributor: Sandy Zeng / Maurice Daly
 Contact:     @JankeSkanke
 Created:     2021-01-02
-Updated:     2022-15-10 by @JankeSkanke
+Updated:     2022-22-02
 
 Version history:
 0.9.0 - (2021 - 01 - 02) Script created
@@ -31,27 +26,23 @@ Version history:
 2.1 - (2021-09-08) Added section to cater for BIOS release version information, for HP, Dell and Lenovo and general bugfixes
 2.1.1 - (2021-21-10) Added MACAddress to the inventory for each NIC. 
 3.0.0 - (2022-22-02) Azure Function updated - Requires version 1.1 of Azure Function LogCollectorAPI for more dynamic log collecting
-3.0.1 - (2022-15-09) Updated to support CloudPC (Different method to find AzureAD DeviceID for verification) and fixed output error from script (Thanks to @gwblok)
-3.5.0 - (2022-14-10) Azure Function updated - Requires version 1.2 Updated output logic to be more dynamic. Fixed a bug in the randomizer function and disabled inventory collection during provisioning day.
+3.0.1 - (2022-15.09) Updated to support CloudPC (Different method to find AzureAD DeviceID for verification) and fixed output error from script (Thanks to @gwblok)
 #>
 
 #region initialize
 # Define your azure function URL: 
 # Example 'https://<appname>.azurewebsites.net/api/<functioname>'
 
-$AzureFunctionURL = "https://fn-cw-loganalyticsapi.azurewebsites.net/api/LogCollectorAPI"
+$AzureFunctionURL = ""
 
 # Enable TLS 1.2 support 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 #Control if you want to collect App or Device Inventory or both (True = Collect)
 $CollectAppInventory = $true
 $CollectDeviceInventory = $true
-# $CollectCustomInventory = $true *SAMPLE*
-
 #Set Log Analytics Log Name
 $AppLogName = "AppInventory"
 $DeviceLogName = "DeviceInventory"
-# $CustomLogName = "CustomInventory" *SAMPLE*
 $Date=(Get-Date)
 # Enable or disable randomized running time to avoid azure function to be overloaded in larger environments 
 # Set to true only if needed 
@@ -182,8 +173,7 @@ function Get-InstalledApplications() {
 #endregion functions
 
 #region script
-#region common
-# ***** DO NOT EDIT IN THIS REGION *****
+
 # Check if device is in "provisioning day" and skip inventory until next day if true
 $JoinDate = Get-AzureADJoinDate
 $DelayDate = $JoinDate.AddDays(1)
@@ -221,7 +211,6 @@ $ComputerManufacturer = $ComputerInfo.Manufacturer
 if ($ComputerManufacturer -match "HP|Hewlett-Packard") {
 	$ComputerManufacturer = "HP"
 }
-#endregion common
 
 #region DEVICEINVENTORY
 if ($CollectDeviceInventory) {
@@ -523,36 +512,20 @@ if ($CollectAppInventory) {
 }
 #endregion APPINVENTORY
 
-#region CUSTOMINVENTORY *SAMPLE*
-<# Here you can add in code for other logs to extend with *SAMPLE
-if ($CollectCustomInventory){
-	Check SAMPLE-CustomLogInventory.ps1 in Github Repo
-}
-#>
-#endregion CUSTOMINVENTORY
-
-#region compose
-# Start composing logdata
-# If additional logs is collected, remember to add to main payload 
+#Start sending logs
 $date = Get-Date -Format "dd-MM HH:mm"
 $OutputMessage = "InventoryDate:$date "
 
 $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 $headers.Add("Content-Type", "application/json")
 
-# Adding every log payload into PSObject for main payload - Additional logs can be added 
 $LogPayLoad = New-Object -TypeName PSObject 
 if ($CollectAppInventory) {
 	$LogPayLoad | Add-Member -NotePropertyMembers @{$AppLogName = $AppInventory}
 }
 if ($CollectDeviceInventory) {
 	$LogPayLoad | Add-Member -NotePropertyMembers @{$DeviceLogName = $DeviceInventory}
-}
-<# *SAMPLE*
-if ($CollectCustomInventory){
-	$LogPayLoad | Add-Member -NotePropertyMember @{$CustomLogName = $CustomInventory}
-}
-#>
+}																																																																		
 
 # Construct main payload to send to LogCollectorAPI
 $MainPayLoad = [PSCustomObject]@{
@@ -560,40 +533,51 @@ $MainPayLoad = [PSCustomObject]@{
 	AzureADDeviceID = $AzureADDeviceID
 	LogPayloads = $LogPayLoad
 }
+
 $MainPayLoadJson = $MainPayLoad| ConvertTo-Json -Depth 9	
 
-#endregion compose
-
-#region ingestion 
-# NO NEED TO EDIT BELOW THIS LINE 
-# New in version 3.5.0 - Now it requires functionapp version 1.2 
-# Set default exit code to 0 
-$ExitCode = 0
-
-# Attempt to send data to API
+# Sending data to API
 try {
 	$ResponseInventory = Invoke-RestMethod $AzureFunctionURL -Method 'POST' -Headers $headers -Body $MainPayLoadJson
-    foreach ($response in $ResponseInventory){
-        if ($response.response -match "200"){
-        $OutputMessage = $OutPutMessage + "OK: $($response.logname) $($response.response) "
-        }
-        else{
-        $OutputMessage = $OutPutMessage + "FAIL: $($response.logname) $($response.response) "
-        $ExitCode = 1
-        }
-    }
+	$OutputMessage = $OutPutMessage + "Inventory:OK " + $ResponseInventory
 } 
 catch {
 	$ResponseInventory = "Error Code: $($_.Exception.Response.StatusCode.value__)"
 	$ResponseMessage = $_.Exception.Message
-    $OutputMessage = $OutPutMessage + "Inventory:FAIL " + $ResponseInventory + $ResponseMessage
-    $ExitCode = 1
+	$OutputMessage = $OutPutMessage + "Inventory:Fail " + $ResponseInventory + $ResponseMessage
 }
-# Exit script with correct output and code
 
-Write-Output $OutputMessage
-Exit $ExitCode																							
-#endregion ingestion 
+# Check status and report to Proactive Remediations
+if ($ResponseInventory -match "200"){
+    $AppResponse = $ResponseInventory.Split('Kb') | Where-Object { $_ -match "AppInventory:" }
+    $DeviceResponse = $ResponseInventory.Split('Kb') | Where-Object { $_ -match "DeviceInventory:" }
+    if ($CollectDeviceInventory) {
+	    if ($DeviceResponse -match "DeviceInventory: 200") {
+		    $OutputMessage = $OutPutMessage  + "`n" + "DeviceInventory:OK " + $DeviceResponse
+	    } else 
+		{
+		    $OutputMessage = $OutPutMessage  + "`n" + "DeviceInventory:Fail " + $DeviceResponse
+	    }
+    }
+    if ($CollectAppInventory) {
+	    if ($AppResponse -match "AppInventory: 200") {
 
+		    $OutputMessage = $OutPutMessage + "`n" + "AppInventory:OK " + $AppResponse
+	    } else {
+		    $OutputMessage = $OutPutMessage + "`n" + "AppInventory:Fail " + $AppResponse
+	    }
+    }
+	Write-Output $OutputMessage
+	if (($DeviceResponse -notmatch "DeviceInventory: 200") -or ($AppResponse -notmatch "AppInventory: 200")) {
+		Exit 1
+	} 
+    else {
+		Exit 0
+	}
+} 
+else {
+    Write-Output "Error: $($ResponseInventory), Message: $($ResponseMessage)"
+	Exit 1
+}
 #endregion script
 

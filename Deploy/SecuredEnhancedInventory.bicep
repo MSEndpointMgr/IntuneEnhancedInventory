@@ -136,11 +136,11 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~3'
+          value: '~4'
         }
         {
           name: 'FUNCTIONS_WORKER_PROCESS_COUNT'
-          value: '3'
+          value: '4'
         }
         {
           name: 'PSWorkerInProcConcurrencyUpperBound'
@@ -209,7 +209,7 @@ resource FunctionAppZipDeploy 'Microsoft.Web/sites/extensions@2015-08-01' = {
   parent: FunctionApp
   name: 'ZipDeploy'
   properties: {
-      packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.1.0/LogCollectorAPI.zip'
+      packageUri: 'https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.2/LogCollectorAPI.zip'
   }
 }
 
@@ -221,8 +221,8 @@ resource FunctionAppSettings 'Microsoft.Web/sites/config@2020-06-01' = {
     WEBSITE_CONTENTSHARE: toLower('LogAnalyticsAPI')
     WEBSITE_RUN_FROM_PACKAGE: 1
     AzureWebJobsDisableHomepage: 'true'
-    FUNCTIONS_EXTENSION_VERSION: '~3'
-    FUNCTIONS_WORKER_PROCESS_COUNT: '3'
+    FUNCTIONS_EXTENSION_VERSION: '~4'
+    FUNCTIONS_WORKER_PROCESS_COUNT: '4'
     FUNCTIONS_WORKER_RUNTIME: 'powershell'
     PSWorkerInProcConcurrencyUpperBound: '10'
     APPINSIGHTS_INSTRUMENTATIONKEY: reference(FunctionAppInsightsComponents.id, '2020-02-02').InstrumentationKey

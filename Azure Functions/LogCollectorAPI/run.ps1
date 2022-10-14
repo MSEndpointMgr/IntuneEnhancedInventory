@@ -1,3 +1,9 @@
+# Intune Enhanced Inventory 
+# Version 1.2 
+# Created and maintained by @JankeSkanke 
+# Requires minimum version  3.5.0 of the Enhanced Inventory Proactive Remediations Script
+# Updated 14.Oct.2022
+
 using namespace System.Net
 # Input bindings are passed in via param block.
 param($Request)
@@ -86,8 +92,7 @@ function Send-LogAnalyticsData() {
    $uri = "https://" + $CustomerId + ".ods.opinsights.azure.com" + $resource + "?api-version=2016-04-01"
    
    #validate that payload data does not exceed limits
-   if ($body.Length -gt (31.9 *1024*1024))
-   {
+   if ($body.Length -gt (31.9 *1024*1024)){
        throw("Upload payload is too big and exceed the 32Mb limit for a single upload. Please reduce the payload size. Current payload size is: " + ($body.Length/1024/1024).ToString("#.#") + "Mb")
    }
    $payloadsize = ("Upload payload size is " + ($body.Length/1024).ToString("#.#") + "Kb ")
@@ -99,15 +104,16 @@ function Send-LogAnalyticsData() {
        "x-ms-date"            = $date;
        "time-generated-field" = $TimeStampField;
    }
-   #Sending data to log analytics 
+   #Sending data to log analytics
    $response = Invoke-WebRequest -Uri $uri -Method $method -ContentType $contentType -Headers $headers -Body $body -UseBasicParsing
-   $statusmessage = "$($response.StatusCode) : $($payloadsize)"
+   $statusmessage = "$($response.StatusCode):$($payloadsize)"
    return $statusmessage 
 }#end function
 #endregion functions
 
 Write-Information "LogCollectorAPI function received a request."
 #region initialize
+
 # Setting inital Status Code: 
 $StatusCode = [HttpStatusCode]::OK
 
@@ -121,7 +127,6 @@ $SharedKey  = $env:SharedKey
 $TenantID = $env:TenantID
 
 # Extracting and processing inbound parameters to variables for matching
-
 $MainPayLoad = $Request.Body.LogPayloads
 $InboundDeviceID= $Request.Body.AzureADDeviceID
 $InboundTenantID = $Request.Body.AzureADTenantID
@@ -130,11 +135,11 @@ $LogsReceived = New-Object -TypeName System.Collections.ArrayList
 foreach ($Key in $MainPayLoad.Keys) {
     $LogsReceived.Add($($Key)) | Out-Null
 }
-
 Write-Information "Logs Received $($LogsReceived)"
 
 #Required empty variable for posting to Log Analytics
 $TimeStampField = ""
+
 #endregion initialize
 
 #region script
@@ -142,6 +147,9 @@ $TimeStampField = ""
 Write-Information "Inbound DeviceID $($InboundDeviceID)"
 Write-Information "Inbound TenantID $($InboundTenantID)"
 Write-Information "Environment TenantID $TenantID"
+
+# Declare response object as Arraylist
+$ResponseArray = New-Object -TypeName System.Collections.ArrayList
 
 # Verify request comes from correct tenant
 if($TenantID -eq $InboundTenantID){
@@ -167,7 +175,7 @@ if($TenantID -eq $InboundTenantID){
                 Write-Information "Processing $($LogName)"
                 # Check if Log type control is enabled
                 if ($LogControll -eq "true"){
-                #Verify log name applicability
+                # Verify log name applicability
                 Write-Information "Log name control is enabled, verifying log name against allowed values"
                 [Array]$AllowedLogNames = $env:AllowedLogNames
                 Write-Information "Allowed log names: $($AllowedLogNames)"
@@ -187,19 +195,39 @@ if($TenantID -eq $InboundTenantID){
                 }
                 if ($LogState){
                     $Json = $MainPayLoad.$LogName | ConvertTo-Json
-                    $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                    # Sending logdata to Log Analytics
-                    $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
-                    Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
-                    $Response = "$($LogName): $($ResponseLogInventory)"
-                    $StatusCode = [HttpStatusCode]::OK
-                    $Body += $Response
+                    $LogSize = $json.Length
+                    # Verify if log has data before sending to Log Analytics
+                    if ($LogSize -gt 0){
+                        Write-Information "Log $($logname) has content. Size is $($json.Length)"
+                        $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
+                        # Sending logdata to Log Analytics
+                        $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
+                        Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
+                        $PSObject = [PSCustomObject]@{
+                            LogName = $LogName
+                            Response = $ResponseLogInventory
+                        }
+                        $ResponseArray.Add($PSObject) | Out-Null
+                        $StatusCode = [HttpStatusCode]::OK
+                    }
+                    else {
+                        # Log is empty - return status 200 but with info about empty log
+                        Write-Information "Log $($logname) has no content. Size is $($json.Length)"
+                        $PSObject = [PSCustomObject]@{
+                            LogName = $LogName
+                            Response = "200:Log does not contain data"
+                        }
+                        $ResponseArray.Add($PSObject) | Out-Null
+                    }
                 }
                 else {
                     Write-Warning "Log $($LogName) is not allowed"
                     $StatusCode = [HttpStatusCode]::OK
-                    $Response = "Log $($LogName) is not allowed"
-                    $Body += $Response
+                    $PSObject = [PSCustomObject]@{
+                        LogName = $LogName
+                        Response = "Logtype is not allowed"
+                    }
+                    $ResponseArray.Add($PSObject) | Out-Null                   
                 }
             }
         }
@@ -218,7 +246,7 @@ else{
     $StatusCode = [HttpStatusCode]::Forbidden
 }
 #endregion script
-
+$body = $ResponseArray | ConvertTo-Json 
 # Associate values to output bindings by calling 'Push-OutputBinding'.
 Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
     StatusCode = $StatusCode

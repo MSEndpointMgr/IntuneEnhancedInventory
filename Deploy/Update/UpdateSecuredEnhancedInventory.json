@@ -1,0 +1,77 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.11.1.770",
+      "templateHash": "6161430488011687667"
+    }
+  },
+  "parameters": {
+    "FunctionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Provide the name of the existing Function App that was given when Intune enchanced inventory was initially deployed."
+      }
+    },
+    "KeyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Provide the name of the existing Key Vault that was created when Intune enchanced inventory was initially deployed."
+      }
+    },
+    "StorageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Provide the name of the existing Storage Account that was automatically given Intune enchanced inventory was initially deployed."
+      }
+    }
+  },
+  "variables": {
+    "FunctionAppInsightsName": "[format('{0}-fa-ai', parameters('FunctionAppName'))]",
+    "KeyVaultRealName": "[parameters('KeyVaultName')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2020-06-01",
+      "name": "[format('{0}/appsettings', parameters('FunctionAppName'))]",
+      "properties": {
+        "AllowedLogNames": "\"AppInventory\",  \"DeviceInventory\", \"SampleInventory\"",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', variables('FunctionAppInsightsName')), '2020-02-02').ConnectionString]",
+        "AzureWebJobsDisableHomepage": "true",
+        "AzureWebJobsStorage": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1}', parameters('StorageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName')), '2021-06-01').keys[0].value)]",
+        "FUNCTIONS_EXTENSION_VERSION": "~4",
+        "FUNCTIONS_WORKER_PROCESS_COUNT": "4",
+        "FUNCTIONS_WORKER_RUNTIME": "powershell",
+        "LogControl": "false",
+        "PSWorkerInProcConcurrencyUpperBound": "10",
+        "SharedKey": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=SharedKey)', variables('KeyVaultRealName'))]",
+        "TenantID": "[subscription().tenantId]",
+        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1}', parameters('StorageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('StorageAccountName')), '2021-06-01').keys[0].value)]",
+        "WEBSITE_CONTENTSHARE": "[toLower('LogAnalyticsAPI')]",
+        "WEBSITE_RUN_FROM_PACKAGE": 1,
+        "WorkspaceID": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=WorkSpaceID)', variables('KeyVaultRealName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites/extensions', parameters('FunctionAppName'), 'ZipDeploy')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/extensions",
+      "apiVersion": "2015-08-01",
+      "name": "[format('{0}/{1}', parameters('FunctionAppName'), 'ZipDeploy')]",
+      "properties": {
+        "packageUri": "https://github.com/MSEndpointMgr/IntuneEnhancedInventory/releases/download/v1.2/LogCollectorAPI.zip"
+      }
+    }
+  ],
+  "outputs": {
+    "functionAppTriggerUrl": {
+      "type": "string",
+      "value": "[format('https://{0}/api/LogCollectorAPI', reference(resourceId('Microsoft.Web/sites', parameters('FunctionAppName')), '2020-12-01').defaultHostName)]"
+    }
+  }
+}
