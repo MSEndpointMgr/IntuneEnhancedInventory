@@ -6,7 +6,8 @@ Repository for the Intune Custom Inventory solution by MSEndpointmgr.com
 > This version of the Azure Function will work for any custom log you want to send securely to Log Analytics
 
 ## Update ONLY
-To perform an update use this deploy button and enter information from your current deployment
+To perform an update use this deploy button and enter information from your current deployment-
+
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FMSEndpointMgr%2FIntuneEnhancedInventory%2Fmain%2FDeploy%2FUpdate%2FUpdateSecuredEnhancedInventory.json)
 
 ## Option 1 
