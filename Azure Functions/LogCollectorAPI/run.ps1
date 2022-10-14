@@ -1,3 +1,9 @@
+# Intune Enhanced Inventory 
+# Version 1.2 
+# Created and maintained by @JankeSkanke 
+# Requires minimum version  3.5.0 of the Enhanced Inventory Proactive Remediations Script
+# Updated 14.Oct.2022
+
 using namespace System.Net
 # Input bindings are passed in via param block.
 param($Request)
@@ -107,6 +113,7 @@ function Send-LogAnalyticsData() {
 
 Write-Information "LogCollectorAPI function received a request."
 #region initialize
+
 # Setting inital Status Code: 
 $StatusCode = [HttpStatusCode]::OK
 
@@ -120,7 +127,6 @@ $SharedKey  = $env:SharedKey
 $TenantID = $env:TenantID
 
 # Extracting and processing inbound parameters to variables for matching
-
 $MainPayLoad = $Request.Body.LogPayloads
 $InboundDeviceID= $Request.Body.AzureADDeviceID
 $InboundTenantID = $Request.Body.AzureADTenantID
@@ -129,11 +135,11 @@ $LogsReceived = New-Object -TypeName System.Collections.ArrayList
 foreach ($Key in $MainPayLoad.Keys) {
     $LogsReceived.Add($($Key)) | Out-Null
 }
-
 Write-Information "Logs Received $($LogsReceived)"
 
 #Required empty variable for posting to Log Analytics
 $TimeStampField = ""
+
 #endregion initialize
 
 #region script
@@ -142,7 +148,9 @@ Write-Information "Inbound DeviceID $($InboundDeviceID)"
 Write-Information "Inbound TenantID $($InboundTenantID)"
 Write-Information "Environment TenantID $TenantID"
 
+# Declare response object as Arraylist
 $ResponseArray = New-Object -TypeName System.Collections.ArrayList
+
 # Verify request comes from correct tenant
 if($TenantID -eq $InboundTenantID){
     Write-Information "Request is comming from correct tenant"
@@ -167,7 +175,7 @@ if($TenantID -eq $InboundTenantID){
                 Write-Information "Processing $($LogName)"
                 # Check if Log type control is enabled
                 if ($LogControll -eq "true"){
-                #Verify log name applicability
+                # Verify log name applicability
                 Write-Information "Log name control is enabled, verifying log name against allowed values"
                 [Array]$AllowedLogNames = $env:AllowedLogNames
                 Write-Information "Allowed log names: $($AllowedLogNames)"
@@ -188,6 +196,7 @@ if($TenantID -eq $InboundTenantID){
                 if ($LogState){
                     $Json = $MainPayLoad.$LogName | ConvertTo-Json
                     $LogSize = $json.Length
+                    # Verify if log has data before sending to Log Analytics
                     if ($LogSize -gt 0){
                         Write-Information "Log $($logname) has content. Size is $($json.Length)"
                         $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
@@ -219,8 +228,6 @@ if($TenantID -eq $InboundTenantID){
                         Response = "Logtype is not allowed"
                     }
                     $ResponseArray.Add($PSObject) | Out-Null                   
-                    #$Response = "Log $($LogName) is not allowed"
-                    #$Body += $Response
                 }
             }
         }

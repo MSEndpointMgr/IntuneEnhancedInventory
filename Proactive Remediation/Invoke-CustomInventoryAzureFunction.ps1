@@ -39,16 +39,19 @@ Version history:
 # Define your azure function URL: 
 # Example 'https://<appname>.azurewebsites.net/api/<functioname>'
 
-$AzureFunctionURL = "https://skankeloganalytics.azurewebsites.net/api/logcollectorapi"
+$AzureFunctionURL = "https://fn-cw-loganalyticsapi.azurewebsites.net/api/LogCollectorAPI"
 
 # Enable TLS 1.2 support 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 #Control if you want to collect App or Device Inventory or both (True = Collect)
 $CollectAppInventory = $true
 $CollectDeviceInventory = $true
+# $CollectCustomInventory = $true *SAMPLE*
+
 #Set Log Analytics Log Name
 $AppLogName = "AppInventory"
 $DeviceLogName = "DeviceInventory"
+# $CustomLogName = "CustomInventory" *SAMPLE*
 $Date=(Get-Date)
 # Enable or disable randomized running time to avoid azure function to be overloaded in larger environments 
 # Set to true only if needed 
@@ -179,7 +182,8 @@ function Get-InstalledApplications() {
 #endregion functions
 
 #region script
-
+#region common
+# ***** DO NOT EDIT IN THIS REGION *****
 # Check if device is in "provisioning day" and skip inventory until next day if true
 $JoinDate = Get-AzureADJoinDate
 $DelayDate = $JoinDate.AddDays(1)
@@ -217,6 +221,7 @@ $ComputerManufacturer = $ComputerInfo.Manufacturer
 if ($ComputerManufacturer -match "HP|Hewlett-Packard") {
 	$ComputerManufacturer = "HP"
 }
+#endregion common
 
 #region DEVICEINVENTORY
 if ($CollectDeviceInventory) {
@@ -518,7 +523,17 @@ if ($CollectAppInventory) {
 }
 #endregion APPINVENTORY
 
-#Start sending logs
+#region CUSTOMINVENTORY *SAMPLE*
+<# Here you can add in code for other logs to extend with *SAMPLE
+if ($CollectCustomInventory){
+	Check SAMPLE-CustomLogInventory.ps1 in Github Repo
+}
+#>
+#endregion CUSTOMINVENTORY
+
+#region compose
+# Start composing logdata
+# If additional logs is collected, remember to add to main payload 
 $date = Get-Date -Format "dd-MM HH:mm"
 $OutputMessage = "InventoryDate:$date "
 
@@ -533,8 +548,11 @@ if ($CollectAppInventory) {
 if ($CollectDeviceInventory) {
 	$LogPayLoad | Add-Member -NotePropertyMembers @{$DeviceLogName = $DeviceInventory}
 }
-
-
+<# *SAMPLE*
+if ($CollectCustomInventory){
+	$LogPayLoad | Add-Member -NotePropertyMember @{$CustomLogName = $CustomInventory}
+}
+#>
 
 # Construct main payload to send to LogCollectorAPI
 $MainPayLoad = [PSCustomObject]@{
@@ -544,6 +562,10 @@ $MainPayLoad = [PSCustomObject]@{
 }
 $MainPayLoadJson = $MainPayLoad| ConvertTo-Json -Depth 9	
 
+#endregion compose
+
+#region ingestion 
+# NO NEED TO EDIT BELOW THIS LINE 
 # New in version 3.5.0 - Now it requires functionapp version 1.2 
 # Set default exit code to 0 
 $ExitCode = 0
@@ -571,6 +593,7 @@ catch {
 
 Write-Output $OutputMessage
 Exit $ExitCode																							
+#endregion ingestion 
 
 #endregion script
 
