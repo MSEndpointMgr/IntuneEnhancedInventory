@@ -2,8 +2,13 @@
 Repository for the Intune Custom Inventory solution by MSEndpointmgr.com
 
 > IMPORTANT! 
-> Version 1.1 requires use of version 3.0.0 of the Invoke-CustomInventoryAzureFunction.ps1 to be used in Proactive Remediations
+> Version 1.2 requires use of version 3.5.0 of the Invoke-CustomInventoryAzureFunction.ps1 to be used in Proactive Remediations
 > This version of the Azure Function will work for any custom log you want to send securely to Log Analytics
+
+## Update ONLY
+To perform an update use this deploy button and enter information from your current deployment-
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FMSEndpointMgr%2FIntuneEnhancedInventory%2Fmain%2FDeploy%2FUpdate%2FUpdateSecuredEnhancedInventory.json)
 
 ## Option 1 
 Use the simple proactive remediation that sends data direct to Log Analytics Workspace with secrets in code. 
