@@ -23,7 +23,6 @@ Created:     2021-01-02
 Updated:     2022-15-10 by @JankeSkanke
 
 Version history:
-0.9.0 - (2021 - 01 - 02) Script created
 1.0.0 - (2021 - 01 - 02) Script polished cleaned up.
 1.0.1 - (2021 - 04 - 05) Added NetworkAdapter array and fixed typo
 2.0 - (2021 - 08 - 29) Moved secrets out of code - now running via Azure Function
@@ -39,7 +38,7 @@ Version history:
 # Define your azure function URL: 
 # Example 'https://<appname>.azurewebsites.net/api/<functioname>'
 
-$AzureFunctionURL = "https://fn-cw-loganalyticsapi.azurewebsites.net/api/LogCollectorAPI"
+$AzureFunctionURL = ""
 
 # Enable TLS 1.2 support 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -51,7 +50,7 @@ $CollectDeviceInventory = $true
 #Set Log Analytics Log Name
 $AppLogName = "AppInventory"
 $DeviceLogName = "DeviceInventory"
-# $CustomLogName = "CustomInventory" *SAMPLE*
+# $CustomLogName = "CustomInventory" *SAMPLE* 
 $Date=(Get-Date)
 # Enable or disable randomized running time to avoid azure function to be overloaded in larger environments 
 # Set to true only if needed 
