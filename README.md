@@ -6,6 +6,7 @@ Repository for the Intune Custom Inventory solution by MSEndpointmgr.com
 > This version of the Azure Function will work for any custom log you want to send securely to Log Analytics
 
 ### Version History 
+Full changelog can be found here: [Changelog](https://github.com/MSEndpointMgr/IntuneEnhancedInventory/blob/main/CHANGELOG.MD)
 #### Version for the Azure Function 
 * 1.2 - Released 15.10.2022 
 * 1.1 - Released 22.02.2022
