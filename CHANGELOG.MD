@@ -12,17 +12,26 @@
 * Removed hardcoding for collecting only DeviceInventory or ApplicationInventory. The Azure Function can now handle any log as long as the data is sendt using the correct formatting. 
 
 ## Changelog for Inventory Collection Proactive remediation
-### 3.5.0 - (2022-14-10) Requires Azure Function version 1.2 
+
+### 3.5.0 - Requires Azure Function version 1.2 
 * Updated output logic in correspondace with new Azure Function returning a payload object instead of string. 
 * Fixed a bug in the randomizer function, use the spread the load on the Azure Function over X minutes for larger environment.
 * Adding 2 variables
 * * Turn on / off randomizer function 
 * * Set the timespan to randomize over 
-* Disabled inventory collection during provisioning day.
-2.0 - (2021 - 08 - 29) Moved secrets out of code - now running via Azure Function
-2.0.1 (2021-09-01) Removed all location information for privacy reasons 
-2.1 - (2021-09-08) Added section to cater for BIOS release version information, for HP, Dell and Lenovo and general bugfixes
-2.1.1 - (2021-21-10) Added MACAddress to the inventory for each NIC. 
-3.0.0 - (2022-22-02) Azure Function updated - Requires version 1.1 of Azure Function LogCollectorAPI for more dynamic log collecting
-3.0.1 - (2022-15-09) Updated to support CloudPC (Different method to find AzureAD DeviceID for verification) 
+* * Disabled inventory collection during provisioning day.
+
+### 3.0.1 - Requires Azure Function version 1.1 
+* Added support for CloudPC (Different method to find AzureAD DeviceID for verification) 
+
+### 3.0.0 -  Requires Azure Function version 1.1 
+* Added options to more easily add different custom logs and inventory by creating 1 main payload to be sent to Azure Function
+* Added sample PR to show how to ingest your own custom data. 
+* Generic bugfixes 
+
+### 2.x - Requires Azure function 1.0 
+* Added MACAddress to the inventory for each NIC. 
+* Added section to cater for BIOS release version information, for HP, Dell and Lenovo and general bugfixes
+* Removed all location gathering for privacy reasons 
+* Moved secrets out of code - now running via Azure Function
 
