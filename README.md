@@ -5,6 +5,26 @@ Repository for the Intune Custom Inventory solution by MSEndpointmgr.com
 > Version 1.2 requires use of version 3.5.0 of the Invoke-CustomInventoryAzureFunction.ps1 to be used in Proactive Remediations
 > This version of the Azure Function will work for any custom log you want to send securely to Log Analytics
 
+### Version History 
+#### Version for the Azure Function 
+* 1.2 - Released 15.10.2022 
+* 1.1 - Released 22.02.2022
+* 1.0 - Released 16.01.2022 
+* 0.9 - First Beta September 2021 (No additional information) 
+
+#### Version history for the Proactive Remediation Script
+* 3.5 - Released 15.10.2022
+* 3.0 - Released 22.02.2022 
+* 2.0 - Released 29.08.2021 First version to use Azure Function 
+* Previous versions not documented 
+
+#### Dependencies 
+Azure Function | Proactive Remediation Script
+---|---
+Version 1.0 | Version 2.0 
+Version 1.1 | Version 3.0 
+Version 1.2 | Version 3.5  
+
 ## Update ONLY
 To perform an update use this deploy button and enter information from your current deployment-
 
