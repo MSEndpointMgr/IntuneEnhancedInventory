@@ -33,6 +33,10 @@ Version history:
 3.0.0 - (2022-22-02) Azure Function updated - Requires version 1.1 of Azure Function LogCollectorAPI for more dynamic log collecting
 3.0.1 - (2022-15-09) Updated to support CloudPC (Different method to find AzureAD DeviceID for verification) and fixed output error from script (Thanks to @gwblok)
 3.5.0 - (2022-14-10) Azure Function updated - Requires version 1.2 Updated output logic to be more dynamic. Fixed a bug in the randomizer function and disabled inventory collection during provisioning day.
+3.5.1 - (2023-05-30) Added battery information to inventory. 
+3.6.0 - (2023-24-02) Added SecureBoot check
+3.6.1 - (2023-13-03) Added TPM Version information
+4.0.0 - (2023-02-06) Azure Function updated to use AADDeviceTrust from https://github.com/MSEndpointMgr/AADDeviceTrust, requires updating the function app to version 2.0 to support this. 
 #>
 
 #region initialize
@@ -179,6 +183,192 @@ function Get-InstalledApplications() {
 	Remove-PSDrive -Name "HKU" | Out-Null
 	Return $Apps
 }
+# Function to get AAD Cert Thumbprint
+function Get-AzureADRegistrationCertificateThumbprint {
+    <#
+    .SYNOPSIS
+        Get the thumbprint of the certificate used for Azure AD device registration.
+    
+    .DESCRIPTION
+        Get the thumbprint of the certificate used for Azure AD device registration.
+    
+    .NOTES
+        Author:      Nickolaj Andersen
+        Contributor: @JankeSkanke
+        Contact:     @NickolajA
+        Created:     2021-06-03
+        Updated:     2022-26-10
+    
+        Version history:
+        1.0.0 - (2021-06-03) Function created
+        1.1.0 - (2022-26-10) Added support for finding thumbprint for Cloud PCs @JankeSkanke
+    #>
+    Process {
+        # Define Cloud Domain Join information registry path
+        $AzureADJoinInfoRegistryKeyPath = "HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo"
+        # Retrieve the child key name that is the thumbprint of the machine certificate containing the device identifier guid
+        $AzureADJoinInfoKey = Get-ChildItem -Path $AzureADJoinInfoRegistryKeyPath | Select-Object -ExpandProperty "PSChildName"
+         # Retrieve the machine certificate based on thumbprint from registry key or Certificate (CloudPC)        
+        if ($AzureADJoinInfoKey -ne $null) {
+            # Match key data against GUID regex for CloudPC Support 
+            if ([guid]::TryParse($AzureADJoinInfoKey, $([ref][guid]::Empty))) {
+                #This is for CloudPC
+                $AzureADJoinCertificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Subject -like "CN=$($AzureADJoinInfoKey)" }
+                $AzureADJoinInfoThumbprint = $AzureADJoinCertificate.Thumbprint
+            }
+            else {
+                # Retrieve the child key name that is the thumbprint of the machine certificate containing the device identifier guid (non-CloudPC)
+                $AzureADJoinInfoThumbprint = Get-ChildItem -Path $AzureADJoinInfoRegistryKeyPath | Select-Object -ExpandProperty "PSChildName"
+            }
+        }
+        # Handle return value
+        return $AzureADJoinInfoThumbprint
+    }
+}
+function New-RSACertificateSignature {
+	<#
+	.SYNOPSIS
+		Creates a new signature based on content passed as parameter input using the private key of a certificate determined by it's thumbprint, to sign the computed hash of the content.
+	
+	.DESCRIPTION
+		Creates a new signature based on content passed as parameter input using the private key of a certificate determined by it's thumbprint, to sign the computed hash of the content.
+		The certificate used must be available in the LocalMachine\My certificate store, and must also contain a private key.
+
+	.PARAMETER Content
+		Specify the content string to be signed.
+
+	.PARAMETER Thumbprint
+		Specify the thumbprint of the certificate.
+	
+	.NOTES
+		Author:      Nickolaj Andersen / Thomas Kurth
+		Contact:     @NickolajA
+		Created:     2021-06-03
+		Updated:     2021-06-03
+	
+		Version history:
+		1.0.0 - (2021-06-03) Function created
+
+		Credits to Thomas Kurth for sharing his original C# code.
+	#>
+	param(
+		[parameter(Mandatory = $true, HelpMessage = "Specify the content string to be signed.")]
+		[ValidateNotNullOrEmpty()]
+		[string]$Content,
+
+		[parameter(Mandatory = $true, HelpMessage = "Specify the thumbprint of the certificate.")]
+		[ValidateNotNullOrEmpty()]
+		[string]$Thumbprint
+	)
+	Process {
+		# Determine the certificate based on thumbprint input
+		$Certificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Thumbprint -eq $CertificateThumbprint }
+		if ($Certificate -ne $null) {
+			if ($Certificate.HasPrivateKey -eq $true) {
+				# Read the RSA private key
+				$RSAPrivateKey = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($Certificate)
+				
+				if ($RSAPrivateKey -ne $null) {
+					if ($RSAPrivateKey -is [System.Security.Cryptography.RSACng]) {
+						# Construct a new SHA256Managed object to be used when computing the hash
+						$SHA256Managed = New-Object -TypeName "System.Security.Cryptography.SHA256Managed"
+
+						# Construct new UTF8 unicode encoding object
+						$UnicodeEncoding = [System.Text.UnicodeEncoding]::UTF8
+
+						# Convert content to byte array
+						[byte[]]$EncodedContentData = $UnicodeEncoding.GetBytes($Content)
+
+						# Compute the hash
+						[byte[]]$ComputedHash = $SHA256Managed.ComputeHash($EncodedContentData)
+
+						# Create signed signature with computed hash
+						[byte[]]$SignatureSigned = $RSAPrivateKey.SignHash($ComputedHash, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+
+						# Convert signature to Base64 string
+						$SignatureString = [System.Convert]::ToBase64String($SignatureSigned)
+						
+						# Handle return value
+						return $SignatureString
+					}
+				}
+			}
+		}
+	}
+}
+function Get-PublicKeyBytesEncodedString {
+	<#
+	.SYNOPSIS
+		Returns the public key byte array encoded as a Base64 string, of the certificate where the thumbprint passed as parameter input is a match.
+	
+	.DESCRIPTION
+		Returns the public key byte array encoded as a Base64 string, of the certificate where the thumbprint passed as parameter input is a match.
+		The certificate used must be available in the LocalMachine\My certificate store.
+
+	.PARAMETER Thumbprint
+		Specify the thumbprint of the certificate.
+	
+	.NOTES
+		Author:      Nickolaj Andersen / Thomas Kurth
+		Contact:     @NickolajA
+		Created:     2021-06-07
+		Updated:     2021-06-07
+	
+		Version history:
+		1.0.0 - (2021-06-07) Function created
+
+		Credits to Thomas Kurth for sharing his original C# code.
+	#>
+	param(
+		[parameter(Mandatory = $true, HelpMessage = "Specify the thumbprint of the certificate.")]
+		[ValidateNotNullOrEmpty()]
+		[string]$Thumbprint
+	)
+	Process {
+		# Determine the certificate based on thumbprint input
+		$Certificate = Get-ChildItem -Path "Cert:\LocalMachine\My" -Recurse | Where-Object { $PSItem.Thumbprint -eq $Thumbprint }
+		if ($Certificate -ne $null) {
+			# Get the public key bytes
+			[byte[]]$PublicKeyBytes = $Certificate.GetPublicKey()
+
+			# Handle return value
+			return [System.Convert]::ToBase64String($PublicKeyBytes)
+		}
+	}
+}
+function Get-ComputerSystemType {
+	<#
+	.SYNOPSIS
+		Get the computer system type, either VM or NonVM.
+	
+	.DESCRIPTION
+		Get the computer system type, either VM or NonVM.
+	
+	.NOTES
+		Author:      Nickolaj Andersen
+		Contact:     @NickolajA
+		Created:     2021-06-07
+		Updated:     2022-01-01
+	
+		Version history:
+		1.0.0 - (2021-06-07) Function created
+		1.0.1 - (2022-01-01) Updated virtual machine array with 'Google Compute Engine'
+	#>
+	Process {
+		# Check if computer system type is virtual
+		$ComputerSystemModel = Get-WmiObject -Class "Win32_ComputerSystem" | Select-Object -ExpandProperty "Model"
+		if ($ComputerSystemModel -in @("Virtual Machine", "VMware Virtual Platform", "VirtualBox", "HVM domU", "KVM", "VMWare7,1", "Google Compute Engine")) {
+			$ComputerSystemType = "VM"
+		}
+		else {
+			$ComputerSystemType = "NonVM"
+		}
+
+		# Handle return value
+		return $ComputerSystemType
+	}
+}
+
 #endregion functions
 
 #region script
@@ -212,6 +402,13 @@ $ManagedDeviceName = $ManagedDeviceInfo.EntDeviceName
 $ManagedDeviceID = $ManagedDeviceInfo.EntDMID
 $AzureADDeviceID = Get-AzureADDeviceID
 $AzureADTenantID = Get-AzureADTenantID
+
+ # Retrieve variables required to build request header
+ $ComputerSystemType = Get-ComputerSystemType
+ $AzureADDeviceID = Get-AzureADDeviceID
+ $CertificateThumbprint = Get-AzureADRegistrationCertificateThumbprint
+ $Signature = New-RSACertificateSignature -Content $AzureADDeviceID -Thumbprint $CertificateThumbprint
+ $PublicKeyBytesEncoded = Get-PublicKeyBytesEncodedString -Thumbprint $CertificateThumbprint
 
 #Get Computer Info
 $ComputerInfo = Get-CimInstance -ClassName Win32_ComputerSystem
@@ -310,17 +507,27 @@ if ($CollectDeviceInventory) {
 		$BitLockerInfo = $null
 	}
 	
+	# TPM Information
+	$ComputerTPMVersion = Get-WmiObject -Class "Win32_Tpm" -Namespace "ROOT\CIMV2\Security\MicrosoftTpm" | Select-Object -ExpandProperty SpecVersion
 	$ComputerTPMReady = $TPMValues.TPMReady
 	$ComputerTPMPresent = $TPMValues.TPMPresent
 	$ComputerTPMEnabled = $TPMValues.TPMEnabled
 	$ComputerTPMActivated = $TPMValues.TPMActivated
 	
+	# BitLocker Information	
 	$ComputerBitlockerCipher = $BitLockerInfo.EncryptionMethod
 	$ComputerBitlockerStatus = $BitLockerInfo.VolumeStatus
 	$ComputerBitlockerProtection = $BitLockerInfo.ProtectionStatus
 	$ComputerDefaultAUService = $DefaultAUService.Name
 	$ComputerAUMetered = $AUMetered
-	
+
+	# SecureBoot Information
+	try {
+		$ComputerSecureBootStatus = Confirm-SecureBootUEFI
+	} catch {
+		$ComputerSecureBootStatus = $null
+	}
+
 	# Get BIOS information
 	# Determine manufacturer specific information
 	switch -Wildcard ($ComputerManufacturer) {
@@ -433,6 +640,52 @@ if ($CollectDeviceInventory) {
 		[System.Collections.ArrayList]$DiskHealthArrayList = $DiskArray
 	}
 	
+	# Get Battery information
+	$BatteryArray = @()
+	$BatteryPresent = [boolean](Get-CimInstance -Namespace "root\wmi" -ClassName "BatteryStatus" -ErrorAction SilentlyContinue)
+		
+	if ($BatteryPresent) {
+		$BatteryInstances = Get-CimInstance -Namespace "root\wmi" -Class "BatteryStatus" | Select-Object -ExpandProperty "InstanceName"
+		foreach ($BatteryInstance in $BatteryInstances) {
+			
+            $BatteryUniqueID = Get-WmiObject -ClassName "BatteryStaticData" -Namespace "root\wmi" | Where-Object { $PSItem.InstanceName -eq $BatteryInstance} | Select-Object -ExpandProperty UniqueID 
+            $BatteryLocation = Get-CimInstance -ClassName "Win32_Battery" -Namespace "root\cimv2" | Where-Object {$_.DeviceID -eq $BatteryUniqueID}   | Select-Object -ExpandProperty "Name"
+            $MSBatteryInfo = Get-WmiObject -Class "MSBatteryClass" -Namespace "root\wmi" | Where-Object { $PSItem.InstanceName -eq $BatteryInstance } | Select-Object "FullChargedCapacity", "DesignedCapacity", "SerialNumber", "CycleCount", "ManufactureName", "DeviceName"
+			$Win32BatteryInfo = Get-CimInstance -ClassName Win32_Battery -Namespace "root\cimv2" | Where-Object {$_.DeviceID -eq $BatteryUniqueID}
+            $Win32PortableBatteryInfo = Get-CimInstance -ClassName Win32_PortableBattery -Namespace "root\cimv2" | Where-Object {$_.Location -eq $BatteryLocation}
+            $BatteryDesignedCapacity = [int]($MSBatteryInfo.DesignedCapacity | Where-Object { $PSItem -gt 0 })[0]
+			$BatteryFullChargedCapacity = [int]($MSBatteryInfo.FullChargedCapacity | Where-Object { $PSItem -gt 0 })[0]
+			$BatteryCycleCount = [int]($MSBatteryInfo.CycleCount | Where-Object { $PSItem -gt 0 })[0]
+			$BatterySerialNumber = ($MSBatteryInfo.SerialNumber | Where-Object { $PSItem -ne $null })
+			$BatteryCurrentMaxCapacity = [math]::Round((($BatteryFullChargedCapacity / $BatteryDesignedCapacity) * 100))
+			$BatteryManufacturer = ($MSBatteryInfo.ManufactureName | Where-Object { $PSItem -ne $null })
+			$BatteryDeviceName = ($MSBatteryInfo.DeviceName | Where-Object { $PSItem -ne $null })
+            $BatteryName = $Win32PortableBatteryInfo.Name
+            $BatteryChemistry = $Win32BatteryInfo.Chemistry
+            $BatteryStatus = $Win32BatteryInfo.BatteryStatus
+            $BatteryErrorCleared = $Win32BatteryInfo.ErrorCleared
+            $BatteryErrorDescription = $Win32BatteryInfo.ErrorDescription           
+            $BatteryLastErrorCode = $Win32BatteryInfo.LastErrorCode
+			
+			$tmpbattery = New-Object -TypeName PSObject
+            $tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryUniqueID" -Value $BatteryUniqueID -Force
+			$tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryDesignedCapacity" -Value $BatteryDesignedCapacity -Force
+			$tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryFullChargedCapacity" -Value $BatteryFullChargedCapacity -Force
+			$tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryCycleCount" -Value $BatteryCycleCount -Force
+			$tmpbattery | Add-Member -MemberType NoteProperty -Name "BatterySerialNumber" -Value $BatterySerialNumber -Force
+			$tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryCurrentMaxCapacity" -Value $BatteryCurrentMaxCapacity -Force
+			$tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryManufacturer" -Value $BatteryManufacturer -Force
+			$tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryDeviceName" -Value $BatteryDeviceName -Force
+            $tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryName" -Value $BatteryName -Force
+            $tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryChemistry" -Value $BatteryChemistry -Force
+            $tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryStatus" -Value $BatteryStatus -Force
+            $tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryErrorCleared" -Value $BatteryErrorCleared -Force
+            $tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryErrorDescription" -Value $BatteryErrorDescription -Force
+            $tmpbattery | Add-Member -MemberType NoteProperty -Name "BatteryLastErrorCode" -Value $BatteryLastErrorCode -Force
+			$BatteryArray += $tmpbattery
+		}
+		[System.Collections.ArrayList]$BatteryArrayList = $BatteryArray
+	}
 	
 	# Create JSON to Upload to Log Analytics
 	$Inventory = New-Object System.Object
@@ -470,11 +723,15 @@ if ($CollectDeviceInventory) {
 	$Inventory | Add-Member -MemberType NoteProperty -Name "TPMEnabled" -Value "$ComputerTPMEnabled" -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "TPMActived" -Value "$ComputerTPMActivated" -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "TPMThumbprint" -Value "$ComputerTPMThumbprint" -Force
+	$Inventory | Add-Member -MemberType NoteProperty -Name "TPMVersion" -Value "$ComputerTPMVersion" -Force	
 	$Inventory | Add-Member -MemberType NoteProperty -Name "BitlockerCipher" -Value "$ComputerBitlockerCipher" -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "BitlockerVolumeStatus" -Value "$ComputerBitlockerStatus" -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "BitlockerProtectionStatus" -Value "$ComputerBitlockerProtection" -Force
+	$Inventory | Add-Member -MemberType NoteProperty -Name "SecureBootEnabled" -Value "$ComputerSecureBootStatus" -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "NetworkAdapters" -Value $NetWorkArrayList -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "DiskHealth" -Value $DiskHealthArrayList -Force
+	$Inventory | Add-Member -MemberType NoteProperty -Name "BatteryPresent" -Value $BatteryPresent -Force
+	$Inventory | Add-Member -MemberType NoteProperty -Name "BatteryStatus" -Value $BatteryArrayList -Force
 	
 	
 	$DeviceInventory = $Inventory
@@ -556,8 +813,12 @@ if ($CollectCustomInventory){
 
 # Construct main payload to send to LogCollectorAPI
 $MainPayLoad = [PSCustomObject]@{
+	DeviceName = $ComputerName
 	AzureADTenantID = $AzureADTenantID
 	AzureADDeviceID = $AzureADDeviceID
+	Signature = $Signature
+	Thumbprint = $CertificateThumbprint
+	PublicKey = $PublicKeyBytesEncoded
 	LogPayloads = $LogPayLoad
 }
 $MainPayLoadJson = $MainPayLoad| ConvertTo-Json -Depth 9	

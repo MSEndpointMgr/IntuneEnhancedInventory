@@ -1,8 +1,8 @@
 # Intune Enhanced Inventory 
-# Version 1.2 
+# Version 2.0
 # Created and maintained by @JankeSkanke 
-# Requires minimum version  3.5.0 of the Enhanced Inventory Proactive Remediations Script
-# Updated 14.Oct.2022
+# Requires minimum version 4.0.0 of the Enhanced Inventory Proactive Remediations Script 
+# Updated 02.June.2023
 
 using namespace System.Net
 # Input bindings are passed in via param block.
@@ -114,8 +114,10 @@ function Send-LogAnalyticsData() {
 Write-Information "LogCollectorAPI function received a request."
 #region initialize
 
-# Setting inital Status Code: 
+# Initate variables
 $StatusCode = [HttpStatusCode]::OK
+$Body = [string]::Empty
+$HeaderValidation = $true
 
 # Define variables from environment
 $LogControll = $env:LogControl
@@ -128,125 +130,193 @@ $TenantID = $env:TenantID
 
 # Extracting and processing inbound parameters to variables for matching
 $MainPayLoad = $Request.Body.LogPayloads
-$InboundDeviceID= $Request.Body.AzureADDeviceID
+$InboundDeviceID = $Request.Body.AzureADDeviceID
 $InboundTenantID = $Request.Body.AzureADTenantID
+$DeviceID = $InboundDeviceID
+$Signature = $Request.Body.Signature
+$Thumbprint = $Request.Body.Thumbprint
+$PublicKey = $Request.Body.PublicKey
 
-$LogsReceived = New-Object -TypeName System.Collections.ArrayList
-foreach ($Key in $MainPayLoad.Keys) {
-    $LogsReceived.Add($($Key)) | Out-Null
+# Validate request header values
+$HeaderValidationList = @(@{ "DeviceID" = $DeviceID }, @{ "Signature" = $Signature }, @{ "Thumbprint" = $Thumbprint }, @{ "PublicKey" = $PublicKey })
+foreach ($HeaderValidationItem in $HeaderValidationList) {
+    foreach ($HeaderItem in $HeaderValidationItem.Keys) {
+        if ([string]::IsNullOrEmpty($HeaderValidationItem[$HeaderItem])) {
+            Write-Warning -Message "Header validation for '$($HeaderItem)' failed, request will not be handled"
+            $StatusCode = [HttpStatusCode]::BadRequest
+            $HeaderValidation = $false
+            $Body = "Header validation failed"
+        }
+        else {
+            if ($HeaderItem -in @("Signature", "PublicKey")) {
+                if ($DebugLogging -eq $true) {
+                    Write-Information "Header validation succeeded for '$($HeaderItem)' with value: $($HeaderValidationItem[$HeaderItem])"
+                }
+                else {
+                    Write-Information "Header validation succeeded for '$($HeaderItem)' with value: <redacted>"
+                }
+            }
+            else {
+                Write-Information "Header validation succeeded for '$($HeaderItem)' with value: $($HeaderValidationItem[$HeaderItem])"
+            }
+        }
+    }  
 }
-Write-Information "Logs Received $($LogsReceived)"
 
-#Required empty variable for posting to Log Analytics
-$TimeStampField = ""
+if ($HeaderValidation -eq $true) {
+    
+    Write-Information "Initiating Inventory handling for device with identifier: $($DeviceID)"
 
-#endregion initialize
+    $LogsReceived = New-Object -TypeName System.Collections.ArrayList
+    foreach ($Key in $MainPayLoad.Keys) {
+        $LogsReceived.Add($($Key)) | Out-Null
+    }
+    Write-Information "Logs Received $($LogsReceived)"
 
-#region script
-# Write to the Azure Functions log stream.
-Write-Information "Inbound DeviceID $($InboundDeviceID)"
-Write-Information "Inbound TenantID $($InboundTenantID)"
-Write-Information "Environment TenantID $TenantID"
+    #Required empty variable for posting to Log Analytics
+    $TimeStampField = ""
 
-# Declare response object as Arraylist
-$ResponseArray = New-Object -TypeName System.Collections.ArrayList
+    #endregion initialize
 
-# Verify request comes from correct tenant
-if($TenantID -eq $InboundTenantID){
-    Write-Information "Request is comming from correct tenant"
-    # Retrieve authentication token
-    $Script:AuthToken = Get-AuthToken
+    #region script
+    # Write to the Azure Functions log stream.
+    Write-Information "Inbound DeviceID $($InboundDeviceID)"
+    Write-Information "Inbound TenantID $($InboundTenantID)"
+    Write-Information "Environment TenantID $TenantID"
 
-    # Query graph for device verification 
-    $DeviceURI = "https://graph.microsoft.com/v1.0/devices?`$filter=deviceId eq '$($InboundDeviceID)'"
-    $DeviceIDResponse = (Invoke-RestMethod -Method "Get" -Uri $DeviceURI -ContentType "application/json" -Headers $Script:AuthToken -ErrorAction Stop).value
+    # Declare response object as Arraylist
+    $ResponseArray = New-Object -TypeName System.Collections.ArrayList
 
-    # Assign to variables for matching 
-    $DeviceID = $DeviceIDResponse.deviceId  
-    $DeviceEnabled = $DeviceIDResponse.accountEnabled    
-    Write-Information "DeviceID $DeviceID"   
-    Write-Information "DeviceEnabled: $DeviceEnabled"
-    # Verify request comes from a valid device
-    if($DeviceID -eq $InboundDeviceID){
-        Write-Information "Request is coming from a valid device in Azure AD"
-        if($DeviceEnabled -eq "True"){
-            Write-Information "Requesting device is not disabled in Azure AD"                       
-            foreach ($LogName in $LogsReceived){
-                Write-Information "Processing $($LogName)"
-                # Check if Log type control is enabled
-                if ($LogControll -eq "true"){
-                # Verify log name applicability
-                Write-Information "Log name control is enabled, verifying log name against allowed values"
-                [Array]$AllowedLogNames = $env:AllowedLogNames
-                Write-Information "Allowed log names: $($AllowedLogNames)"
-                $LogCheck = $AllowedLogNames -match $LogName
-                    if(-not ([string]::IsNullOrEmpty($LogCheck))){
-                        Write-Host "Log $LogName Allowed"
-                        [bool]$LogState = $true
+    # Verify request comes from correct tenant
+    if($TenantID -eq $InboundTenantID){
+        Write-Information "Request is comming from correct tenant"
+        # Retrieve authentication token
+        $Script:AuthToken = Get-AuthToken
+
+        # Query graph for device verification 
+        #$DeviceURI = "https://graph.microsoft.com/v1.0/devices?`$filter=deviceId eq '$($InboundDeviceID)'"
+        #$DeviceIDResponse = (Invoke-RestMethod -Method "Get" -Uri $DeviceURI -ContentType "application/json" -Headers $Script:AuthToken -ErrorAction Stop).value
+        
+        $AzureADDeviceRecord = Get-AzureADDeviceRecord -DeviceID $DeviceID -AuthToken $AuthToken
+
+        # Assign to variables for matching 
+        $DeviceID = $AzureADDeviceRecord.deviceId  
+        $DeviceEnabled = $AzureADDeviceRecord.accountEnabled    
+        Write-Information "DeviceID $DeviceID"   
+        Write-Information "DeviceEnabled: $DeviceEnabled"
+        # Verify request comes from a valid device
+        if($DeviceID -eq $InboundDeviceID){
+            Write-Information "Request is coming from a valid device in Azure AD"
+            if($DeviceEnabled -eq "True"){
+                Write-Information "Requesting device is not disabled in Azure AD"  
+                
+                # Validate thumbprint from input request with Azure AD device record's alternativeSecurityIds details
+                if (Test-AzureADDeviceAlternativeSecurityIds -AlternativeSecurityIdKey $AzureADDeviceRecord.alternativeSecurityIds.key -Type "Thumbprint" -Value $Thumbprint) {
+                    Write-Information "Successfully validated certificate thumbprint from inbound request"
+
+                    # Validate public key hash from input request with Azure AD device record's alternativeSecurityIds details
+                    if (Test-AzureADDeviceAlternativeSecurityIds -AlternativeSecurityIdKey $AzureADDeviceRecord.alternativeSecurityIds.key -Type "Hash" -Value $PublicKey) {
+                        Write-Information "Successfully validated certificate SHA256 hash value from inbound request"
+
+                        $EncryptionVerification = Test-Encryption -PublicKeyEncoded $PublicKey -Signature $Signature -Content $AzureADDeviceRecord.deviceId
+                        if ($EncryptionVerification -eq $true) {
+                            Write-Information "Successfully validated inbound request came from a trusted Azure AD device record"
+                            foreach ($LogName in $LogsReceived){
+                                Write-Information "Processing $($LogName)"
+                                # Check if Log type control is enabled
+                                if ($LogControll -eq "true"){
+                                # Verify log name applicability
+                                Write-Information "Log name control is enabled, verifying log name against allowed values"
+                                [Array]$AllowedLogNames = $env:AllowedLogNames
+                                Write-Information "Allowed log names: $($AllowedLogNames)"
+                                $LogCheck = $AllowedLogNames -match $LogName
+                                    if(-not ([string]::IsNullOrEmpty($LogCheck))){
+                                        Write-Host "Log $LogName Allowed"
+                                        [bool]$LogState = $true
+                                    }
+                                    else {
+                                        Write-Warning "Logname $LogName not allowed"
+                                        [bool]$LogState = $false
+                                    }       
+                                }
+                                else{
+                                    Write-Information "Log control is not enabled, continue"
+                                    [bool]$LogState = $true
+                                }
+                                if ($LogState){
+                                    $Json = $MainPayLoad.$LogName | ConvertTo-Json
+                                    $LogSize = $json.Length
+                                    # Verify if log has data before sending to Log Analytics
+                                    if ($LogSize -gt 0){
+                                        Write-Information "Log $($logname) has content. Size is $($json.Length)"
+                                        $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
+                                        # Sending logdata to Log Analytics
+                                        $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
+                                        Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
+                                        $PSObject = [PSCustomObject]@{
+                                            LogName = $LogName
+                                            Response = $ResponseLogInventory
+                                        }
+                                        $ResponseArray.Add($PSObject) | Out-Null
+                                        $StatusCode = [HttpStatusCode]::OK
+                                    }
+                                    else {
+                                        # Log is empty - return status 200 but with info about empty log
+                                        Write-Information "Log $($logname) has no content. Size is $($json.Length)"
+                                        $PSObject = [PSCustomObject]@{
+                                            LogName = $LogName
+                                            Response = "200:Log does not contain data"
+                                        }
+                                        $ResponseArray.Add($PSObject) | Out-Null
+                                    }
+                                }
+                                else {
+                                    Write-Warning "Log $($LogName) is not allowed"
+                                    $StatusCode = [HttpStatusCode]::OK
+                                    $PSObject = [PSCustomObject]@{
+                                        LogName = $LogName
+                                        Response = "Logtype is not allowed"
+                                    }
+                                    $ResponseArray.Add($PSObject) | Out-Null                   
+                                }
+                            }
+                        }
+                        else {
+                            Write-Warning -Message "Trusted Azure AD device record validation for inbound request failed, could not validate signed content from client"
+                            $StatusCode = [HttpStatusCode]::Forbidden
+                            $Body = "Untrusted request"
+                        }
                     }
                     else {
-                        Write-Warning "Logname $LogName not allowed"
-                        [bool]$LogState = $false
-                    }       
-                }
-                else{
-                    Write-Information "Log control is not enabled, continue"
-                    [bool]$LogState = $true
-                }
-                if ($LogState){
-                    $Json = $MainPayLoad.$LogName | ConvertTo-Json
-                    $LogSize = $json.Length
-                    # Verify if log has data before sending to Log Analytics
-                    if ($LogSize -gt 0){
-                        Write-Information "Log $($logname) has content. Size is $($json.Length)"
-                        $LogBody = ([System.Text.Encoding]::UTF8.GetBytes($Json))
-                        # Sending logdata to Log Analytics
-                        $ResponseLogInventory = Send-LogAnalyticsData -customerId $CustomerId -sharedKey $SharedKey -body $LogBody -logType $LogName
-                        Write-Information "$($LogName) Logs sent to LA $($ResponseLogInventory)"
-                        $PSObject = [PSCustomObject]@{
-                            LogName = $LogName
-                            Response = $ResponseLogInventory
-                        }
-                        $ResponseArray.Add($PSObject) | Out-Null
-                        $StatusCode = [HttpStatusCode]::OK
-                    }
-                    else {
-                        # Log is empty - return status 200 but with info about empty log
-                        Write-Information "Log $($logname) has no content. Size is $($json.Length)"
-                        $PSObject = [PSCustomObject]@{
-                            LogName = $LogName
-                            Response = "200:Log does not contain data"
-                        }
-                        $ResponseArray.Add($PSObject) | Out-Null
+                        Write-Warning -Message "Trusted Azure AD device record validation for inbound request failed, could not validate certificate SHA256 hash value"
+                        $StatusCode = [HttpStatusCode]::Forbidden
+                        $Body = "Untrusted request"
                     }
                 }
                 else {
-                    Write-Warning "Log $($LogName) is not allowed"
-                    $StatusCode = [HttpStatusCode]::OK
-                    $PSObject = [PSCustomObject]@{
-                        LogName = $LogName
-                        Response = "Logtype is not allowed"
-                    }
-                    $ResponseArray.Add($PSObject) | Out-Null                   
+                    Write-Warning -Message "Trusted Azure AD device record validation for inbound request failed, could not validate certificate thumbprint"
+                    $StatusCode = [HttpStatusCode]::Forbidden
+                    $Body = "Untrusted request"
                 }
+           
+            }
+            else{
+                Write-Warning "Device is not enabled - Forbidden"
+                $StatusCode = [HttpStatusCode]::Forbidden
             }
         }
         else{
-            Write-Warning "Device is not enabled - Forbidden"
+            Write-Warning  "Device not in my Tenant - Forbidden"
             $StatusCode = [HttpStatusCode]::Forbidden
         }
     }
     else{
-        Write-Warning  "Device not in my Tenant - Forbidden"
+        Write-Warning "Tenant not allowed - Forbidden"
         $StatusCode = [HttpStatusCode]::Forbidden
     }
+    #endregion script
+    $body = $ResponseArray | ConvertTo-Json 
 }
-else{
-    Write-Warning "Tenant not allowed - Forbidden"
-    $StatusCode = [HttpStatusCode]::Forbidden
-}
-#endregion script
-$body = $ResponseArray | ConvertTo-Json 
 # Associate values to output bindings by calling 'Push-OutputBinding'.
 Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
     StatusCode = $StatusCode
