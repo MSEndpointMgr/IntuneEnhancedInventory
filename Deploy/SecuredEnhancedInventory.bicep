@@ -88,6 +88,7 @@ resource FunctionAppInsightsComponents 'Microsoft.Insights/components@2020-02-02
   kind: 'web'
   properties: {
     Application_Type: 'web'
+    WorkspaceResourceId: LogAnalyticsWorkspace.id
   }
   tags: union(Tags, 
     {
@@ -110,7 +111,7 @@ resource FunctionApp 'Microsoft.Web/sites@2020-12-01' = {
     siteConfig: {
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
-      powerShellVersion: '~7'
+      powerShellVersion: '7.2'
       scmType: 'None'
       use32BitWorkerProcess: false
       appSettings: [
