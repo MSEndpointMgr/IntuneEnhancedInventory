@@ -17,10 +17,10 @@ $RandomizeMinutes - the number of minutes to randomize load over. Max 50 minutes
 .NOTES
 FileName:    Invoke-CustomInventory.ps1
 Author:      Jan Ketil Skanke
-Contributor: Sandy Zeng / Maurice Daly
+Contributors: Sandy Zeng / Maurice Daly
 Contact:     @JankeSkanke
 Created:     2021-01-02
-Updated:     2022-15-10 by @JankeSkanke
+Updated:     2023-02-06 by @JankeSkanke
 
 Version history:
 0.9.0 - (2021 - 01 - 02) Script created
@@ -37,9 +37,13 @@ Version history:
 3.6.0 - (2023-24-02) Added SecureBoot check
 3.6.1 - (2023-13-03) Added TPM Version information
 4.0.0 - (2023-02-06) Azure Function updated to use AADDeviceTrust from https://github.com/MSEndpointMgr/AADDeviceTrust, requires updating the function app to version 2.0 to support this. 
+4.0.1 - (2023-02-06) Adding support for Windows RE Version information
 #>
 
 #region initialize
+# Script Version 
+$ScriptVersion = "4.0.1"
+
 # Define your azure function URL: 
 # Example 'https://<appname>.azurewebsites.net/api/<functioname>'
 
@@ -368,6 +372,13 @@ function Get-ComputerSystemType {
 		return $ComputerSystemType
 	}
 }
+function Get-WindowsREInfo {
+    $reagentcOutput = reagentc /info | findstr "\\?\GLOBALROOT\device"
+    $winRELocation = $reagentcOutput.replace("Windows RE location: ", "").Trim()
+    $imagePath = "$winRELocation\winre.wim"
+    $imageIndex = 1
+    Get-WindowsImage -imagepath $imagePath -index $imageIndex
+}
 
 #endregion functions
 
@@ -584,25 +595,30 @@ if ($CollectDeviceInventory) {
 	$NetWorkArray = @()
 	
 	$CurrentNetAdapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+	$CurrentNetAdapetersIPInfo = Get-NetIPConfiguration
 	
 	foreach ($CurrentNetAdapter in $CurrentNetAdapters) {
-		$IPConfiguration = Get-NetIPConfiguration -InterfaceIndex $CurrentNetAdapter[0].ifIndex
-		$ComputerNetInterfaceDescription = $CurrentNetAdapter.InterfaceDescription
-		$ComputerNetProfileName = $IPConfiguration.NetProfile.Name
-		$ComputerNetIPv4Adress = $IPConfiguration.IPv4Address.IPAddress
-		$ComputerNetInterfaceAlias = $CurrentNetAdapter.InterfaceAlias
-		$ComputerNetIPv4DefaultGateway = $IPConfiguration.IPv4DefaultGateway.NextHop
-		$ComputerNetMacAddress = $CurrentNetAdapter.MacAddress
-		
-		$tempnetwork = New-Object -TypeName PSObject
-		$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetInterfaceDescription" -Value "$ComputerNetInterfaceDescription" -Force
-		$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetProfileName" -Value "$ComputerNetProfileName" -Force
-		$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetIPv4Adress" -Value "$ComputerNetIPv4Adress" -Force
-		$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetInterfaceAlias" -Value "$ComputerNetInterfaceAlias" -Force
-		$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetIPv4DefaultGateway" -Value "$ComputerNetIPv4DefaultGateway" -Force
-		$tempnetwork | Add-Member -MemberType NoteProperty -Name "MacAddress" -Value "$ComputerNetMacAddress" -Force
-		$NetWorkArray += $tempnetwork
+		$IPConfiguration = $null
+		$IPConfiguration = $CurrentNetAdapetersIPInfo | where-object { $_.InterfaceAlias -eq $CurrentNetAdapter.InterfaceAlias }
+		if ($IPConfiguration -ne $null){
+			$ComputerNetInterfaceDescription = $CurrentNetAdapter.InterfaceDescription
+			$ComputerNetProfileName = $IPConfiguration.NetProfile.Name
+			$ComputerNetIPv4Adress = $IPConfiguration.IPv4Address.IPAddress
+			$ComputerNetInterfaceAlias = $CurrentNetAdapter.InterfaceAlias
+			$ComputerNetIPv4DefaultGateway = $IPConfiguration.IPv4DefaultGateway.NextHop
+			$ComputerNetMacAddress = $CurrentNetAdapter.MacAddress
+			
+			$tempnetwork = New-Object -TypeName PSObject
+			$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetInterfaceDescription" -Value "$ComputerNetInterfaceDescription" -Force
+			$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetProfileName" -Value "$ComputerNetProfileName" -Force
+			$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetIPv4Adress" -Value "$ComputerNetIPv4Adress" -Force
+			$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetInterfaceAlias" -Value "$ComputerNetInterfaceAlias" -Force
+			$tempnetwork | Add-Member -MemberType NoteProperty -Name "NetIPv4DefaultGateway" -Value "$ComputerNetIPv4DefaultGateway" -Force
+			$tempnetwork | Add-Member -MemberType NoteProperty -Name "MacAddress" -Value "$ComputerNetMacAddress" -Force
+			$NetWorkArray += $tempnetwork
+		}
 	}
+
 	[System.Collections.ArrayList]$NetWorkArrayList = $NetWorkArray
 	
 	# Get Disk Health
@@ -686,7 +702,12 @@ if ($CollectDeviceInventory) {
 		}
 		[System.Collections.ArrayList]$BatteryArrayList = $BatteryArray
 	}
-	
+
+	# Get WinReInformation 
+	$WinREInformation = Get-WindowsREInfo
+	$WinReVersion = $WinREInformation.Version
+	$WinReLanguage = $WinREInformation.Languages
+
 	# Create JSON to Upload to Log Analytics
 	$Inventory = New-Object System.Object
 	$Inventory | Add-Member -MemberType NoteProperty -Name "ManagedDeviceName" -Value "$ManagedDeviceName" -Force
@@ -732,8 +753,10 @@ if ($CollectDeviceInventory) {
 	$Inventory | Add-Member -MemberType NoteProperty -Name "DiskHealth" -Value $DiskHealthArrayList -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "BatteryPresent" -Value $BatteryPresent -Force
 	$Inventory | Add-Member -MemberType NoteProperty -Name "BatteryStatus" -Value $BatteryArrayList -Force
-	
-	
+	$Inventory | Add-Member -MemberType NoteProperty -Name "WinREVersion" -Value $WinReVersion -Force
+	$Inventory | Add-Member -MemberType NoteProperty -Name "WinRELanguage" -Value $WinReLanguage -Force
+	$Inventory | Add-Member -MemberType NoteProperty -Name "ScriptVersion" -Value $ScriptVersion -Force
+		
 	$DeviceInventory = $Inventory
 	
 }
@@ -773,6 +796,7 @@ if ($CollectAppInventory) {
 		$tempapp | Add-Member -MemberType NoteProperty -Name "AppPublisher" -Value $App.Publisher -Force
 		$tempapp | Add-Member -MemberType NoteProperty -Name "AppUninstallString" -Value $App.UninstallString -Force
 		$tempapp | Add-Member -MemberType NoteProperty -Name "AppUninstallRegPath" -Value $app.PSPath.Split("::")[-1]
+		$tempapp | Add-Member -MemberType NoteProperty -Name "ScriptVersion" -Value $ScriptVersion -Force
 		$AppArray += $tempapp
 	}
 	
