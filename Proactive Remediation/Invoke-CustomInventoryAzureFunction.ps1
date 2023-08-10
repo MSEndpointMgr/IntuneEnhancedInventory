@@ -702,7 +702,7 @@ if ($CollectDeviceInventory) {
 		}
 		[System.Collections.ArrayList]$BatteryArrayList = $BatteryArray
 	}
-
+	
 	# Get WinReInformation 
 	$WinREInformation = Get-WindowsREInfo
 	$WinReVersion = $WinREInformation.Version
