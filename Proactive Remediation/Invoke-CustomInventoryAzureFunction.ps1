@@ -20,7 +20,7 @@ Author:      Jan Ketil Skanke
 Contributors: Sandy Zeng / Maurice Daly
 Contact:     @JankeSkanke
 Created:     2021-01-02
-Updated:     2023-02-06 by @JankeSkanke
+Updated:     2023-10-08 by @JankeSkanke
 
 Version history:
 0.9.0 - (2021 - 01 - 02) Script created
@@ -37,7 +37,7 @@ Version history:
 3.6.0 - (2023-24-02) Added SecureBoot check
 3.6.1 - (2023-13-03) Added TPM Version information
 4.0.0 - (2023-02-06) Azure Function updated to use AADDeviceTrust from https://github.com/MSEndpointMgr/AADDeviceTrust, requires updating the function app to version 2.0 to support this. 
-4.0.1 - (2023-02-06) Adding support for Windows RE Version information
+4.0.1 - (2023-10-08) Adding support for Windows RE Version information
 #>
 
 #region initialize
